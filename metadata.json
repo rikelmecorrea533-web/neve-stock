@@ -1,0 +1,6 @@
+{
+  "name": "NEVE STOCK",
+  "description": "Aplicativo web para conferência de estoque e destinação de materiais da Neve Medical.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

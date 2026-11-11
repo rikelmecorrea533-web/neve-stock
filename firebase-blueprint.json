@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "CatalogItem": {
+      "title": "CatalogItem",
+      "description": "Item fixo do catálogo de tecidos da Neve Medical",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nart": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["CAMPO", "COMPRESSA"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["id", "nart", "description", "type"]
+    },
+    "Folder": {
+      "title": "Folder",
+      "description": "Uma pasta de importação de materiais",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "operator": { "type": "string" },
+        "itemCount": { "type": "number" },
+        "totalQty": { "type": "number" },
+        "checkedCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["PENDENTE", "EM_CONFERENCIA", "CONFERIDA_100", "VERIFICADA"] },
+        "verifiedBy": { "type": "string" },
+        "verifiedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "createdAt", "operator"]
+    },
+    "StockItem": {
+      "title": "StockItem",
+      "description": "Item de estoque para conferência",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "folderId": { "type": "string" },
+        "nart": { "type": "string" },
+        "description": { "type": "string" },
+        "lot": { "type": "string" },
+        "systemQty": { "type": "number" },
+        "type": { "type": "string", "enum": ["CAMPO", "COMPRESSA", "REVISAR"] },
+        "originWarehouse": { "type": "string" },
+        "physicalFound": { "type": "boolean" },
+        "physicalQty": { "type": "number" },
+        "status": { "type": "string", "enum": ["PENDENTE", "CONFERIDO", "SOBRA", "NAO_ENCONTRADO"] },
+        "destinations": { "type": "string" },
+        "transferred": { "type": "boolean" },
+        "transferredBy": { "type": "string" },
+        "transferredAt": { "type": "string" },
+        "checkedAt": { "type": "string" },
+        "checkedBy": { "type": "string" }
+      },
+      "required": ["id", "folderId", "nart", "description", "lot", "systemQty", "type", "originWarehouse", "status"]
+    },
+    "HistoryLog": {
+      "title": "HistoryLog",
+      "description": "Registro de auditoria de cada ação",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "operator": { "type": "string" },
+        "nart": { "type": "string" },
+        "description": { "type": "string" },
+        "lot": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "operator", "action"]
+    }
+  },
+  "firestore": {
+    "/catalogo/{catalogId}": {
+      "schema": { "$ref": "#/entities/CatalogItem" },
+      "description": "Catálogo fixo de tecidos com NART, Descrição e Tipo"
+    },
+    "/folders/{folderId}": {
+      "schema": { "$ref": "#/entities/Folder" },
+      "description": "Pastas de importação de lotes"
+    },
+    "/items/{itemId}": {
+      "schema": { "$ref": "#/entities/StockItem" },
+      "description": "Itens de materiais para conferência"
+    },
+    "/history/{historyId}": {
+      "schema": { "$ref": "#/entities/HistoryLog" },
+      "description": "Histórico de ações e alterações"
+    }
+  }
+}
