@@ -175,7 +175,7 @@ export const FolderDetailView: React.FC<FolderDetailViewProps> = ({
       const updatedItem: StockItem = {
         ...activeItem,
         lot: cycleInput.trim() || activeItem.lot,
-        cycle: activeItem.alvejado ? (cycleInput.trim() || activeItem.lot) : undefined,
+        cycle: activeItem.alvejado ? (cycleInput.trim() || activeItem.lot) : null,
         physicalFound: found,
         physicalQty: found ? physicalQty : 0,
         status: destResult.status,
@@ -245,8 +245,9 @@ export const FolderDetailView: React.FC<FolderDetailViewProps> = ({
         hasSurplus: false,
         surplusQty: 0,
         surplusDecision: 'PENDING_DECISION',
-        checkedAt: undefined,
-        checkedBy: undefined,
+        checkedAt: null,
+        checkedBy: null,
+        checkedByMatricula: null,
         updatedAt: new Date().toISOString(),
       };
 

@@ -28,6 +28,7 @@ import {
   saveCatalogBatch,
   seedInitialDataIfEmpty,
   flushOfflineQueue,
+  subscribeToCloudErrors,
   getCachedFolders,
   getCachedItems,
   getCachedCatalog,
@@ -47,7 +48,7 @@ import { ImportModal } from './components/ImportModal';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { formatKg } from './utils/formatters';
-import { Loader2, CheckCircle2 } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function App() {
   // Autenticação do Usuário por Matrícula
@@ -58,9 +59,10 @@ export default function App() {
   // Mensagem toast temporária (ex: "X Pastas enviadas para o sistema")
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Status de rede & sincronização
+  // Status de rede & sincronização & erros de nuvem
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
 
   // Dados centrais compartilhados em tempo real via Firestore
   const [folders, setFolders] = useState<Folder[]>(getCachedFolders);
@@ -88,12 +90,20 @@ export default function App() {
     return () => unsubAuth();
   }, []);
 
+  // Monitoramento de erros de sincronização com a nuvem Firestore
+  useEffect(() => {
+    return subscribeToCloudErrors((err) => {
+      setCloudError(err);
+    });
+  }, []);
+
   // Inicialização e listeners em tempo real do Firebase quando o usuário estiver autenticado
   useEffect(() => {
     if (!currentUser) return;
 
     testFirestoreConnection();
     seedInitialDataIfEmpty();
+    flushOfflineQueue();
 
     // Migração automática de pastas salvas apenas no aparelho para o Firestore compartilhado
     migrateLocalFoldersToFirestore(currentUser).then((migratedCount) => {
@@ -212,7 +222,7 @@ export default function App() {
       nart: row.nart,
       description: row.description,
       lot: row.lot,
-      cycle: row.alvejado ? row.lot : undefined,
+      cycle: row.alvejado ? row.lot : null,
       systemQty: row.systemQty,
       type: row.type,
       alvejado: !!row.alvejado,
@@ -226,6 +236,11 @@ export default function App() {
       surplusQty: 0,
       surplusDecision: 'PENDING_DECISION',
       transferred: false,
+      transferredBy: null,
+      transferredAt: null,
+      checkedBy: null,
+      checkedByMatricula: null,
+      checkedAt: null,
       updatedAt: now,
     }));
 
@@ -242,7 +257,12 @@ export default function App() {
     setFolders((prev) => [newFolder, ...prev]);
     setItems((prev) => [...newItems, ...prev]);
 
-    await saveImportBatch(newFolder, newItems, log);
+    try {
+      await saveImportBatch(newFolder, newItems, log);
+    } catch (saveErr) {
+      console.warn('Erro ao salvar lote no Firestore:', saveErr);
+      showToast('Não foi salvo na nuvem, tentando de novo');
+    }
 
     // Salva arquivo original fatiado na subcoleção se fornecido
     if (rawFile) {
@@ -272,8 +292,8 @@ export default function App() {
 
     const itemToSave: StockItem = {
       ...updatedItem,
-      checkedBy: action === 'CONFERENCIA' ? operator : undefined,
-      checkedByMatricula: action === 'CONFERENCIA' ? currentUser?.matricula : undefined,
+      checkedBy: action === 'CONFERENCIA' ? operator : null,
+      checkedByMatricula: action === 'CONFERENCIA' ? (currentUser?.matricula || null) : null,
     };
 
     // Atualização otimista do item
@@ -349,8 +369,8 @@ export default function App() {
           ? {
               ...i,
               transferred,
-              transferredBy: transferred ? operator : undefined,
-              transferredAt: transferred ? new Date().toISOString() : undefined,
+              transferredBy: transferred ? operator : null,
+              transferredAt: transferred ? new Date().toISOString() : null,
             }
           : i
       )
@@ -396,8 +416,8 @@ export default function App() {
   // Determina se estamos na tela inicial (Aba Hoje sem pasta aberta)
   const isHomeScreen = currentTab === 'hoje' && !activeFolder;
 
-  // Título dinâmico para telas secundárias
-  const screenTitle = useMemo(() => {
+  // Título dinâmico para telas secundárias (cálculo simples sem hook)
+  const getScreenTitle = (): string => {
     if (activeFolder) return activeFolder.name;
     if (currentTab === 'hoje') return 'Hoje';
     if (currentTab === 'pastas') return 'Pastas de Importação';
@@ -405,7 +425,8 @@ export default function App() {
     if (currentTab === 'catalogo') return 'Catálogo de Tecidos';
     if (currentTab === 'historico') return 'Histórico de Auditoria';
     return 'NEVE STOCK';
-  }, [activeFolder, currentTab]);
+  };
+  const screenTitle = getScreenTitle();
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col text-slate-900 font-sans antialiased selection:bg-blue-900 selection:text-white">
@@ -436,6 +457,29 @@ export default function App() {
         isOnline={isOnline}
         isSyncing={isSyncing}
       />
+
+      {/* Aviso visível de sincronização pendente com a nuvem */}
+      {cloudError && (
+        <div className="bg-amber-500 text-slate-950 px-4 py-2.5 flex items-center justify-between text-xs sm:text-sm font-semibold shadow-md">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 text-slate-950" />
+            <span>{cloudError}</span>
+          </div>
+          <button
+            onClick={async () => {
+              setIsSyncing(true);
+              try {
+                await flushOfflineQueue();
+              } finally {
+                setIsSyncing(false);
+              }
+            }}
+            className="ml-3 px-3 py-1 bg-slate-950 text-white rounded text-xs font-bold hover:bg-slate-800 transition active:scale-95 shrink-0 cursor-pointer"
+          >
+            Tentar agora
+          </button>
+        </div>
+      )}
 
       {/* Conteúdo Principal com scroll livre */}
       <main className="flex-1 w-full max-w-7xl mx-auto">
@@ -471,9 +515,9 @@ export default function App() {
                   hasSurplus: false,
                   surplusQty: 0,
                   surplusDecision: 'PENDING_DECISION',
-                  checkedAt: undefined,
-                  checkedBy: undefined,
-                  checkedByMatricula: undefined,
+                  checkedAt: null,
+                  checkedBy: null,
+                  checkedByMatricula: null,
                   updatedAt: new Date().toISOString(),
                 };
                 await handleSaveStockItem(

@@ -50,7 +50,7 @@ export interface StockItem {
   systemQty: number; // Em kg com 2 decimais
   type: MaterialType;
   alvejado: boolean; // true = Alvejado (usa Ciclo e fica na seção ALVEJADOS), false = Não alvejado (usa Lote)
-  cycle?: string; // Ciclo explícito (espelho de lot para alvejados)
+  cycle?: string | null; // Ciclo explícito (espelho de lot para alvejados)
   originWarehouse: string; // "ARMAZÉM 12"
   physicalFound: boolean | null; // null = pendente, true = sim, false = não
   physicalQty: number | null; // Em kg com 2 decimais
@@ -60,15 +60,15 @@ export interface StockItem {
   hasSurplus?: boolean;
   surplusQty: number;
   surplusDecision?: 'PENDING_DECISION' | 'ALL_TO_01' | 'SYSTEM_TO_01_SURPLUS_FLAG';
-  checkedAt?: string; // ISO String
-  checkedBy?: string; // Nome do operador
-  checkedByMatricula?: string;
-  notes?: string;
+  checkedAt?: string | null; // ISO String
+  checkedBy?: string | null; // Nome do operador
+  checkedByMatricula?: string | null;
+  notes?: string | null;
   updatedAt?: string;
-  previousState?: string;
+  previousState?: string | null;
   transferred?: boolean;
-  transferredBy?: string;
-  transferredAt?: string;
+  transferredBy?: string | null;
+  transferredAt?: string | null;
 }
 
 export interface Folder {
@@ -76,15 +76,15 @@ export interface Folder {
   name: string; // Ex: "Importação 11/11/2026 00:30 – por Rikelme"
   createdAt: string; // ISO String
   operator: string;
-  operatorMatricula?: string;
+  operatorMatricula?: string | null;
   itemCount: number;
   totalQty: number; // Em kg com 2 decimais
   checkedCount: number;
   status: FolderStatus;
-  verifiedBy?: string;
-  verifiedByMatricula?: string;
-  verifiedAt?: string; // ISO String
-  notes?: string;
+  verifiedBy?: string | null;
+  verifiedByMatricula?: string | null;
+  verifiedAt?: string | null;
+  notes?: string | null;
   originalFile?: StoredFileInfo;
 }
 

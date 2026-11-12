@@ -9,6 +9,7 @@ import {
   User as FirebaseUser,
 } from 'firebase/auth';
 import {
+  initializeFirestore,
   getFirestore,
   collection,
   doc,
@@ -36,10 +37,71 @@ import {
 import { INITIAL_CATALOG_ITEMS } from './defaultData';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Inicialização segura do Firebase
+// Inicialização segura do Firebase com suporte a propriedades indefinidas
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+function getOrCreateFirestore() {
+  try {
+    return initializeFirestore(
+      app,
+      { ignoreUndefinedProperties: true },
+      firebaseConfig.firestoreDatabaseId
+    );
+  } catch {
+    return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  }
+}
+
+export const db = getOrCreateFirestore();
 export const auth = getAuth(app);
+
+// Sistema de Notificação e Monitoramento de Erros de Nuvem
+type CloudErrorListener = (msg: string | null) => void;
+const cloudErrorListeners = new Set<CloudErrorListener>();
+let currentCloudError: string | null = null;
+
+export function getCloudError(): string | null {
+  return currentCloudError;
+}
+
+export function notifyCloudError(msg: string | null) {
+  currentCloudError = msg;
+  cloudErrorListeners.forEach((cb) => {
+    try {
+      cb(msg);
+    } catch (err) {
+      console.error('Erro no listener de nuvem:', err);
+    }
+  });
+}
+
+export function subscribeToCloudErrors(listener: CloudErrorListener): () => void {
+  cloudErrorListeners.add(listener);
+  listener(currentCloudError);
+  return () => {
+    cloudErrorListeners.delete(listener);
+  };
+}
+
+// Remove recursivamente propriedades undefined e garante compatibilidade com o Firestore
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return null as any;
+  }
+  if (Array.isArray(data)) {
+    return data.map((item) => sanitizeForFirestore(item)) as any;
+  }
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const result: Record<string, any> = {};
+    for (const [key, val] of Object.entries(data as Record<string, any>)) {
+      if (val !== undefined) {
+        result[key] = sanitizeForFirestore(val);
+      }
+    }
+    return result as T;
+  }
+  return data;
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -338,14 +400,10 @@ export async function migrateLocalFoldersToFirestore(
   user: UserProfile
 ): Promise<number> {
   try {
-    const migratedFlag = localStorage.getItem('neve_stock_migrated_v3');
-    if (migratedFlag === 'true') return 0;
-
     const rawLocalFolders = localStorage.getItem('neve_stock_folders_v2');
     const rawLocalItems = localStorage.getItem('neve_stock_items_v2');
 
     if (!rawLocalFolders) {
-      localStorage.setItem('neve_stock_migrated_v3', 'true');
       return 0;
     }
 
@@ -353,7 +411,6 @@ export async function migrateLocalFoldersToFirestore(
     const localItems: StockItem[] = rawLocalItems ? JSON.parse(rawLocalItems) : [];
 
     if (!Array.isArray(localFolders) || localFolders.length === 0) {
-      localStorage.setItem('neve_stock_migrated_v3', 'true');
       return 0;
     }
 
@@ -374,24 +431,37 @@ export async function migrateLocalFoldersToFirestore(
           folderId: folder.id,
         };
 
-        const batch = writeBatch(db);
-        batch.set(doc(db, 'folders', folder.id), {
+        const sanitizedFolder = sanitizeForFirestore({
           ...folder,
           operator: folder.operator || `${user.nome} (${user.matricula})`,
           operatorMatricula: folder.operatorMatricula || user.matricula,
         });
+        const sanitizedItems = folderItems.map((i) => sanitizeForFirestore(i));
+        const sanitizedLog = sanitizeForFirestore(log);
 
-        for (const item of folderItems) {
-          batch.set(doc(db, 'items', item.id), item);
+        const CHUNK_SIZE = 400;
+        const firstChunk = sanitizedItems.slice(0, CHUNK_SIZE);
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'folders', folder.id), sanitizedFolder, { merge: true });
+        for (const item of firstChunk) {
+          batch.set(doc(db, 'items', item.id), item, { merge: true });
+        }
+        batch.set(doc(db, 'history', log.id), sanitizedLog, { merge: true });
+        await batch.commit();
+
+        for (let idx = CHUNK_SIZE; idx < sanitizedItems.length; idx += CHUNK_SIZE) {
+          const nextBatch = writeBatch(db);
+          const chunk = sanitizedItems.slice(idx, idx + CHUNK_SIZE);
+          for (const item of chunk) {
+            nextBatch.set(doc(db, 'items', item.id), item, { merge: true });
+          }
+          await nextBatch.commit();
         }
 
-        batch.set(doc(db, 'history', log.id), log);
-        await batch.commit();
         migratedCount++;
       }
     }
 
-    localStorage.setItem('neve_stock_migrated_v3', 'true');
     return migratedCount;
   } catch (error) {
     console.warn('Erro ao verificar ou migrar pastas locais:', error);
@@ -584,25 +654,35 @@ export async function seedInitialDataIfEmpty(): Promise<void> {
 // Salva item no catálogo
 export async function saveCatalogItem(item: CatalogItem): Promise<void> {
   const itemRef = doc(db, 'catalogo', item.id);
+  const sanitized = sanitizeForFirestore(item);
   try {
-    await setDoc(itemRef, item, { merge: true });
+    await setDoc(itemRef, sanitized, { merge: true });
+    notifyCloudError(null);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `catalogo/${item.id}`);
-    queueOfflineMutation('SAVE_CATALOG_ITEM', item);
+    queueOfflineMutation('SAVE_CATALOG_ITEM', sanitized);
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
   }
 }
 
 // Salva lista de itens no catálogo em batch
 export async function saveCatalogBatch(items: CatalogItem[]): Promise<void> {
   try {
-    const batch = writeBatch(db);
-    for (const item of items) {
-      batch.set(doc(db, 'catalogo', item.id), item, { merge: true });
+    const sanitized = items.map((i) => sanitizeForFirestore(i));
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < sanitized.length; i += CHUNK_SIZE) {
+      const batch = writeBatch(db);
+      const chunk = sanitized.slice(i, i + CHUNK_SIZE);
+      for (const item of chunk) {
+        batch.set(doc(db, 'catalogo', item.id), item, { merge: true });
+      }
+      await batch.commit();
     }
-    await batch.commit();
+    notifyCloudError(null);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'catalogo/batch');
     queueOfflineMutation('SAVE_CATALOG_BATCH', items);
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
   }
 }
 
@@ -611,20 +691,25 @@ export async function deleteCatalogItem(itemId: string): Promise<void> {
   const itemRef = doc(db, 'catalogo', itemId);
   try {
     await deleteDoc(itemRef);
+    notifyCloudError(null);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `catalogo/${itemId}`);
     queueOfflineMutation('DELETE_CATALOG_ITEM', { id: itemId });
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
   }
 }
 
 // Salva item de conferência
 export async function saveStockItem(item: StockItem): Promise<void> {
   const itemRef = doc(db, 'items', item.id);
+  const sanitized = sanitizeForFirestore(item);
   try {
-    await setDoc(itemRef, item, { merge: true });
+    await setDoc(itemRef, sanitized, { merge: true });
+    notifyCloudError(null);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `items/${item.id}`);
-    queueOfflineMutation('SAVE_ITEM', item);
+    queueOfflineMutation('SAVE_ITEM', sanitized);
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
   }
 }
 
@@ -635,16 +720,18 @@ export async function toggleItemTransferred(
   operatorName: string
 ): Promise<void> {
   const itemRef = doc(db, 'items', itemId);
-  const patch = {
+  const patch = sanitizeForFirestore({
     transferred,
     transferredBy: transferred ? operatorName : null,
     transferredAt: transferred ? new Date().toISOString() : null,
-  };
+  });
   try {
     await updateDoc(itemRef, patch);
+    notifyCloudError(null);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `items/${itemId}`);
     queueOfflineMutation('TOGGLE_TRANSFERRED', { id: itemId, ...patch });
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
   }
 }
 
@@ -653,20 +740,25 @@ export async function deleteStockItem(itemId: string): Promise<void> {
   const itemRef = doc(db, 'items', itemId);
   try {
     await deleteDoc(itemRef);
+    notifyCloudError(null);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `items/${itemId}`);
     queueOfflineMutation('DELETE_ITEM', { id: itemId });
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
   }
 }
 
 // Salva ou atualiza pasta
 export async function saveFolder(folder: Folder): Promise<void> {
   const folderRef = doc(db, 'folders', folder.id);
+  const sanitized = sanitizeForFirestore(folder);
   try {
-    await setDoc(folderRef, folder, { merge: true });
+    await setDoc(folderRef, sanitized, { merge: true });
+    notifyCloudError(null);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `folders/${folder.id}`);
-    queueOfflineMutation('SAVE_FOLDER', folder);
+    queueOfflineMutation('SAVE_FOLDER', sanitized);
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
   }
 }
 
@@ -674,29 +766,31 @@ export async function saveFolder(folder: Folder): Promise<void> {
 export async function verifyFolder(folderId: string, operatorName: string): Promise<void> {
   const folderRef = doc(db, 'folders', folderId);
   const now = new Date().toISOString();
-  const patch = {
+  const patch = sanitizeForFirestore({
     status: 'VERIFICADA',
     verifiedBy: operatorName,
     verifiedAt: now,
-  };
+  });
 
-  const log: HistoryLog = {
+  const log: HistoryLog = sanitizeForFirestore({
     id: `log-verify-${Date.now()}`,
     timestamp: now,
     operator: operatorName,
     action: 'VERIFICAR_PASTA',
     details: `Pasta ${folderId} marcada como VERIFICADA por ${operatorName}.`,
     folderId,
-  };
+  });
 
   try {
     const batch = writeBatch(db);
     batch.update(folderRef, patch);
     batch.set(doc(db, 'history', log.id), log);
     await batch.commit();
+    notifyCloudError(null);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `folders/${folderId}/verify`);
     queueOfflineMutation('VERIFY_FOLDER', { folderId, patch, log });
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
   }
 }
 
@@ -721,57 +815,86 @@ export async function deleteFolderCascade(
     });
 
     // Registra log da exclusão no histórico
-    const log: HistoryLog = {
+    const log: HistoryLog = sanitizeForFirestore({
       id: `log-del-folder-${Date.now()}`,
       timestamp: new Date().toISOString(),
       operator: operatorName,
       action: 'EXCLUIR_PASTA',
       details: `Pasta "${folderName}" e suas ${itemsSnap.size} conferências foram excluídas por ${operatorName}.`,
       folderId,
-    };
+    });
     batch.set(doc(db, 'history', log.id), log);
 
     await batch.commit();
+    notifyCloudError(null);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `folders/${folderId}/cascade`);
     queueOfflineMutation('DELETE_FOLDER_CASCADE', { folderId, folderName, operatorName });
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
   }
 }
 
-// Salva importação de lote inteiro (pasta + itens + log)
+// Salva importação de lote inteiro (pasta + itens + log) de forma particionada e segura
 export async function saveImportBatch(folder: Folder, items: StockItem[], log: HistoryLog): Promise<void> {
-  try {
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'folders', folder.id), folder);
+  const sanitizedFolder = sanitizeForFirestore(folder);
+  const sanitizedLog = sanitizeForFirestore(log);
+  const sanitizedItems = items.map((i) => sanitizeForFirestore(i));
 
-    for (const item of items) {
-      batch.set(doc(db, 'items', item.id), item);
+  try {
+    const CHUNK_SIZE = 400;
+    const firstChunk = sanitizedItems.slice(0, CHUNK_SIZE);
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'folders', sanitizedFolder.id), sanitizedFolder, { merge: true });
+
+    for (const item of firstChunk) {
+      batch.set(doc(db, 'items', item.id), item, { merge: true });
     }
 
-    batch.set(doc(db, 'history', log.id), log);
+    batch.set(doc(db, 'history', sanitizedLog.id), sanitizedLog, { merge: true });
     await batch.commit();
+
+    for (let i = CHUNK_SIZE; i < sanitizedItems.length; i += CHUNK_SIZE) {
+      const nextBatch = writeBatch(db);
+      const chunk = sanitizedItems.slice(i, i + CHUNK_SIZE);
+      for (const item of chunk) {
+        nextBatch.set(doc(db, 'items', item.id), item, { merge: true });
+      }
+      await nextBatch.commit();
+    }
+
+    notifyCloudError(null);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'folders/batch');
-    queueOfflineMutation('SAVE_BATCH', { folder, items, log });
+    queueOfflineMutation('SAVE_BATCH', {
+      folder: sanitizedFolder,
+      items: sanitizedItems,
+      log: sanitizedLog,
+    });
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
+    throw error;
   }
 }
 
 // Registra auditoria no histórico
 export async function addHistoryLog(log: HistoryLog): Promise<void> {
-  const logRef = doc(db, 'history', log.id);
+  const sanitized = sanitizeForFirestore(log);
+  const logRef = doc(db, 'history', sanitized.id);
   try {
-    await setDoc(logRef, log);
+    await setDoc(logRef, sanitized);
+    notifyCloudError(null);
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, `history/${log.id}`);
-    queueOfflineMutation('ADD_HISTORY', log);
+    queueOfflineMutation('ADD_HISTORY', sanitized);
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
   }
 }
 
 function queueOfflineMutation(type: string, payload: any) {
   try {
     const queue = JSON.parse(localStorage.getItem(STORAGE_SYNC_QUEUE) || '[]');
-    queue.push({ type, payload, timestamp: Date.now() });
+    queue.push({ type, payload: sanitizeForFirestore(payload), timestamp: Date.now() });
     localStorage.setItem(STORAGE_SYNC_QUEUE, JSON.stringify(queue));
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
   } catch (e) {
     console.error('Erro ao salvar na fila offline:', e);
   }
@@ -780,39 +903,135 @@ function queueOfflineMutation(type: string, payload: any) {
 export async function flushOfflineQueue(onProgress?: (count: number) => void): Promise<number> {
   try {
     const raw = localStorage.getItem(STORAGE_SYNC_QUEUE);
-    if (!raw) return 0;
+    if (!raw) {
+      notifyCloudError(null);
+      return 0;
+    }
     const queue = JSON.parse(raw);
-    if (!Array.isArray(queue) || queue.length === 0) return 0;
-
-    let processed = 0;
-    for (const task of queue) {
-      if (task.type === 'SAVE_ITEM') {
-        await setDoc(doc(db, 'items', task.payload.id), task.payload, { merge: true });
-      } else if (task.type === 'DELETE_ITEM') {
-        await deleteDoc(doc(db, 'items', task.payload.id));
-      } else if (task.type === 'SAVE_FOLDER') {
-        await setDoc(doc(db, 'folders', task.payload.id), task.payload, { merge: true });
-      } else if (task.type === 'ADD_HISTORY') {
-        await setDoc(doc(db, 'history', task.payload.id), task.payload);
-      } else if (task.type === 'SAVE_CATALOG_ITEM') {
-        await setDoc(doc(db, 'catalogo', task.payload.id), task.payload, { merge: true });
-      } else if (task.type === 'DELETE_CATALOG_ITEM') {
-        await deleteDoc(doc(db, 'catalogo', task.payload.id));
-      } else if (task.type === 'TOGGLE_TRANSFERRED') {
-        await updateDoc(doc(db, 'items', task.payload.id), {
-          transferred: task.payload.transferred,
-          transferredBy: task.payload.transferredBy,
-          transferredAt: task.payload.transferredAt,
-        });
-      }
-      processed++;
-      if (onProgress) onProgress(processed);
+    if (!Array.isArray(queue) || queue.length === 0) {
+      notifyCloudError(null);
+      return 0;
     }
 
-    localStorage.removeItem(STORAGE_SYNC_QUEUE);
+    let processed = 0;
+    const remainingQueue: any[] = [];
+
+    for (let i = 0; i < queue.length; i++) {
+      const task = queue[i];
+      try {
+        if (task.type === 'SAVE_BATCH') {
+          const { folder, items, log } = task.payload;
+          const sanitizedFolder = sanitizeForFirestore(folder);
+          const sanitizedLog = sanitizeForFirestore(log);
+          const sanitizedItems = (items || []).map((it: any) => sanitizeForFirestore(it));
+
+          const CHUNK_SIZE = 400;
+          const firstChunk = sanitizedItems.slice(0, CHUNK_SIZE);
+          const batch = writeBatch(db);
+          batch.set(doc(db, 'folders', sanitizedFolder.id), sanitizedFolder, { merge: true });
+          for (const item of firstChunk) {
+            batch.set(doc(db, 'items', item.id), item, { merge: true });
+          }
+          if (sanitizedLog) {
+            batch.set(doc(db, 'history', sanitizedLog.id), sanitizedLog, { merge: true });
+          }
+          await batch.commit();
+
+          for (let j = CHUNK_SIZE; j < sanitizedItems.length; j += CHUNK_SIZE) {
+            const nextBatch = writeBatch(db);
+            const chunk = sanitizedItems.slice(j, j + CHUNK_SIZE);
+            for (const item of chunk) {
+              nextBatch.set(doc(db, 'items', item.id), item, { merge: true });
+            }
+            await nextBatch.commit();
+          }
+        } else if (task.type === 'SAVE_CATALOG_BATCH') {
+          const items: CatalogItem[] = task.payload || [];
+          const sanitized = items.map((it) => sanitizeForFirestore(it));
+          const CHUNK_SIZE = 400;
+          for (let j = 0; j < sanitized.length; j += CHUNK_SIZE) {
+            const batch = writeBatch(db);
+            const chunk = sanitized.slice(j, j + CHUNK_SIZE);
+            for (const item of chunk) {
+              batch.set(doc(db, 'catalogo', item.id), item, { merge: true });
+            }
+            await batch.commit();
+          }
+        } else if (task.type === 'VERIFY_FOLDER') {
+          const { folderId, patch, log } = task.payload;
+          const batch = writeBatch(db);
+          batch.update(doc(db, 'folders', folderId), sanitizeForFirestore(patch));
+          if (log) {
+            batch.set(doc(db, 'history', log.id), sanitizeForFirestore(log));
+          }
+          await batch.commit();
+        } else if (task.type === 'DELETE_FOLDER_CASCADE') {
+          const { folderId, folderName, operatorName } = task.payload;
+          const itemsQuery = query(collection(db, 'items'), where('folderId', '==', folderId));
+          const itemsSnap = await getDocs(itemsQuery);
+          const batch = writeBatch(db);
+          batch.delete(doc(db, 'folders', folderId));
+          itemsSnap.forEach((d) => batch.delete(d.ref));
+          if (operatorName) {
+            const log: HistoryLog = sanitizeForFirestore({
+              id: `log-del-folder-${Date.now()}`,
+              timestamp: new Date().toISOString(),
+              operator: operatorName,
+              action: 'EXCLUIR_PASTA',
+              details: `Pasta "${folderName}" e suas ${itemsSnap.size} conferências foram excluídas por ${operatorName}.`,
+              folderId,
+            });
+            batch.set(doc(db, 'history', log.id), log);
+          }
+          await batch.commit();
+        } else if (task.type === 'SAVE_ITEM') {
+          await setDoc(doc(db, 'items', task.payload.id), sanitizeForFirestore(task.payload), { merge: true });
+        } else if (task.type === 'DELETE_ITEM') {
+          await deleteDoc(doc(db, 'items', task.payload.id));
+        } else if (task.type === 'SAVE_FOLDER') {
+          await setDoc(doc(db, 'folders', task.payload.id), sanitizeForFirestore(task.payload), { merge: true });
+        } else if (task.type === 'ADD_HISTORY') {
+          await setDoc(doc(db, 'history', task.payload.id), sanitizeForFirestore(task.payload));
+        } else if (task.type === 'SAVE_CATALOG_ITEM') {
+          await setDoc(doc(db, 'catalogo', task.payload.id), sanitizeForFirestore(task.payload), { merge: true });
+        } else if (task.type === 'DELETE_CATALOG_ITEM') {
+          await deleteDoc(doc(db, 'catalogo', task.payload.id));
+        } else if (task.type === 'TOGGLE_TRANSFERRED') {
+          await updateDoc(doc(db, 'items', task.payload.id), sanitizeForFirestore({
+            transferred: task.payload.transferred,
+            transferredBy: task.payload.transferredBy ?? null,
+            transferredAt: task.payload.transferredAt ?? null,
+          }));
+        }
+
+        processed++;
+        if (onProgress) onProgress(processed);
+      } catch (taskErr) {
+        console.warn('Erro ao processar item da fila offline:', taskErr);
+        remainingQueue.push(...queue.slice(i));
+        break;
+      }
+    }
+
+    if (remainingQueue.length > 0) {
+      localStorage.setItem(STORAGE_SYNC_QUEUE, JSON.stringify(remainingQueue));
+      notifyCloudError('Não foi salvo na nuvem, tentando de novo');
+    } else {
+      localStorage.removeItem(STORAGE_SYNC_QUEUE);
+      notifyCloudError(null);
+    }
+
     return processed;
   } catch (err) {
     console.warn('Falha ao processar fila offline:', err);
+    notifyCloudError('Não foi salvo na nuvem, tentando de novo');
     return 0;
   }
+}
+
+// Sincronização automática quando a conexão é restabelecida
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    flushOfflineQueue();
+  });
 }

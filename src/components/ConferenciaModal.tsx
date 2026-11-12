@@ -40,19 +40,22 @@ export const ConferenciaModal: React.FC<ConferenciaModalProps> = ({
   onConfirm,
   operator,
 }) => {
-  if (!isOpen || !item) return null;
+  // Estados locais da conferência (sempre antes de qualquer return condicional)
+  const [found, setFound] = useState<boolean | null>(true);
+  const [physicalQty, setPhysicalQty] = useState<number>(0);
+  const [selectedType, setSelectedType] = useState<MaterialType>('CAMPO');
+  const [surplusDecision, setSurplusDecision] = useState<SurplusDecision>('PENDING_DECISION');
 
-  // Estados locais da conferência
-  const [found, setFound] = useState<boolean | null>(
-    item.physicalFound !== null ? item.physicalFound : true
-  );
-  const [physicalQty, setPhysicalQty] = useState<number>(
-    item.physicalFound !== null ? (item.physicalQty ?? item.systemQty) : item.systemQty
-  );
-  const [selectedType, setSelectedType] = useState<MaterialType>(item.type);
-  const [surplusDecision, setSurplusDecision] = useState<SurplusDecision>(
-    item.surplusDecision || 'PENDING_DECISION'
-  );
+  useEffect(() => {
+    if (item) {
+      setFound(item.physicalFound !== null ? item.physicalFound : true);
+      setPhysicalQty(item.physicalFound !== null ? (item.physicalQty ?? item.systemQty) : item.systemQty);
+      setSelectedType(item.type);
+      setSurplusDecision(item.surplusDecision || 'PENDING_DECISION');
+    }
+  }, [item, isOpen]);
+
+  if (!isOpen || !item) return null;
 
   // Recalcula a sugestão de destinação em tempo real
   const destinationResult: DestinationResult = computeDestination(
@@ -119,8 +122,9 @@ export const ConferenciaModal: React.FC<ConferenciaModalProps> = ({
       hasSurplus: false,
       surplusQty: 0,
       surplusDecision: 'PENDING_DECISION',
-      checkedAt: undefined,
-      checkedBy: undefined,
+      checkedAt: null,
+      checkedBy: null,
+      checkedByMatricula: null,
       updatedAt: new Date().toISOString(),
     };
 

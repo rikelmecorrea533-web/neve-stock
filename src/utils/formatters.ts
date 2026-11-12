@@ -1,7 +1,7 @@
 /**
  * Formata data e hora no padrão brasileiro: 11/11/2026 00:30
  */
-export function formatDateTime(isoString?: string): string {
+export function formatDateTime(isoString?: string | null): string {
   if (!isoString) return '-';
   const date = new Date(isoString);
   if (isNaN(date.getTime())) return '-';
@@ -15,7 +15,7 @@ export function formatDateTime(isoString?: string): string {
   return `${day}/${month}/${year} ${hours}:${minutes}`;
 }
 
-export function formatDateOnly(isoString?: string): string {
+export function formatDateOnly(isoString?: string | null): string {
   if (!isoString) return '-';
   const date = new Date(isoString);
   if (isNaN(date.getTime())) return '-';
@@ -31,7 +31,7 @@ export function formatDateOnly(isoString?: string): string {
  * Retorna o tempo decorrido no formato amigável solicitado:
  * "há 5 min", "há 2 h 10 min", "há 3 dias", "agora mesmo"
  */
-export function formatRelativeTime(isoString?: string): string {
+export function formatRelativeTime(isoString?: string | null): string {
   if (!isoString) return '';
   const date = new Date(isoString);
   if (isNaN(date.getTime())) return '';
