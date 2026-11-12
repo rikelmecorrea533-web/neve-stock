@@ -65,9 +65,26 @@ export function formatRelativeTime(isoString?: string): string {
 }
 
 /**
- * Formata números com separador de milhar: 1.200
+ * Formata números com 2 casas decimais no padrão brasileiro: 208,34 ou 1.525,20
+ */
+export function formatKgNumber(num: number | undefined | null): string {
+  if (num === undefined || num === null || isNaN(num)) return '0,00';
+  return new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(num);
+}
+
+/**
+ * Formata números com unidade kg e 2 casas decimais: 208,34 kg; 1.525,20 kg
+ */
+export function formatKg(num: number | undefined | null): string {
+  return `${formatKgNumber(num)} kg`;
+}
+
+/**
+ * Formata quantidade em kg (padrão 2 casas se houver decimais, sempre consistente)
  */
 export function formatQuantity(num: number | undefined | null): string {
-  if (num === undefined || num === null || isNaN(num)) return '0';
-  return new Intl.NumberFormat('pt-BR').format(num);
+  return formatKgNumber(num);
 }

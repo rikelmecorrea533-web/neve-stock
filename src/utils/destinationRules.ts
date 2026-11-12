@@ -27,6 +27,7 @@ export interface OfficialFabricRule {
   nart: string;
   description: string;
   type: 'CAMPO' | 'COMPRESSA';
+  alvejado: boolean;
   ifMatches: 'ARMAZÉM 01';
   ifDifferenceOrNotFound: 'ARMAZÉM 04' | 'ARMAZÉM 06';
 }
@@ -34,12 +35,14 @@ export interface OfficialFabricRule {
 /**
  * Tabela Oficial Neve Medical (13 tecidos oficiais)
  * NART completo com sufixos (-00, -01, -09, -11)
+ * Alvejados identificados oficialmente: 7 tecidos alvejados e 6 normais (não alvejados)
  */
 export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
   {
     nart: '79092-50040-01',
     description: 'TECIDO CROCHE CAMPO 34CM INA',
     type: 'CAMPO',
+    alvejado: false,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 04',
   },
@@ -47,6 +50,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50118-00',
     description: 'TECIDO CROCHE 7,5CM VISCOSE RX INA',
     type: 'COMPRESSA',
+    alvejado: false,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 06',
   },
@@ -54,6 +58,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50119-00',
     description: 'TECIDO CROCHE 7,5CM VISCOSE',
     type: 'COMPRESSA',
+    alvejado: false,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 06',
   },
@@ -61,6 +66,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50119-01',
     description: 'TECIDO CROCHE 7,5CM 13 FIOS INA',
     type: 'COMPRESSA',
+    alvejado: false,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 06',
   },
@@ -68,6 +74,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50119-09',
     description: 'TECIDO CROCHE 7,5CM 09 FIOS INA',
     type: 'COMPRESSA',
+    alvejado: false,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 06',
   },
@@ -75,6 +82,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50119-11',
     description: 'TECIDO CROCHE 7,5CM 11 FIOS INA',
     type: 'COMPRESSA',
+    alvejado: false,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 06',
   },
@@ -82,6 +90,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50219-00',
     description: 'TECIDO CROCHE 7,5CM ALVEJADO',
     type: 'COMPRESSA',
+    alvejado: true,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 06',
   },
@@ -89,6 +98,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50220-00',
     description: 'TECIDO CROCHE 10CM ALVEJADO',
     type: 'COMPRESSA',
+    alvejado: true,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 06',
   },
@@ -96,6 +106,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50221-00',
     description: 'TECIDO CROCHE 10CM RX ALVEJADO',
     type: 'COMPRESSA',
+    alvejado: true,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 06',
   },
@@ -103,6 +114,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50222-00',
     description: 'TECIDO CROCHE 7,5CM RX ALVEJADO',
     type: 'COMPRESSA',
+    alvejado: true,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 06',
   },
@@ -110,6 +122,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50223-00',
     description: 'TECIDO CROCHE CAMPO 34CM C/RX ALVEJADO',
     type: 'CAMPO',
+    alvejado: true,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 04',
   },
@@ -117,6 +130,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50224-00',
     description: 'TECIDO CROCHE CAMPO 20CM ALVEJADO',
     type: 'CAMPO',
+    alvejado: true,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 04',
   },
@@ -124,6 +138,7 @@ export const OFFICIAL_NEVE_FABRICS_TABLE: OfficialFabricRule[] = [
     nart: '79092-50228-00',
     description: 'TECIDO CROCHE 7,5CM 11 FIOS ALVEJADO',
     type: 'COMPRESSA',
+    alvejado: true,
     ifMatches: 'ARMAZÉM 01',
     ifDifferenceOrNotFound: 'ARMAZÉM 06',
   },
@@ -137,9 +152,19 @@ export const OFFICIAL_NEVE_MAP = new Map<string, OfficialFabricRule>(
  * Retorna o armazém de destino para diferença ou não encontrado
  * CAMPO -> ARMAZÉM 04
  * COMPRESSA -> ARMAZÉM 06
+ * (Alvejado não muda o destino: CAMPO vai para o 04 e COMPRESSA para o 06)
  */
 export function getDifferenceDestination(type: MaterialType): 'ARMAZÉM 04' | 'ARMAZÉM 06' {
   return type === 'CAMPO' ? 'ARMAZÉM 04' : 'ARMAZÉM 06';
+}
+
+/**
+ * Verifica se a descrição contém a palavra ALVEJADO
+ */
+export function isDescriptionAlvejado(description?: string): boolean {
+  if (!description) return false;
+  const clean = description.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return clean.includes('ALVEJAD');
 }
 
 /**
@@ -152,8 +177,6 @@ export function detectMaterialType(description: string): MaterialType {
   if (!description || !description.trim()) return 'REVISAR';
   const clean = description.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-  // Se a descrição tiver a palavra CAMPO: tipo CAMPO
-  // Se NÃO tiver a palavra CAMPO: tipo COMPRESSA
   if (clean.includes('CAMPO')) {
     return 'CAMPO';
   }
@@ -163,6 +186,7 @@ export function detectMaterialType(description: string): MaterialType {
 export interface ResolvedItemTypeResult {
   type: MaterialType;
   description: string;
+  alvejado: boolean;
   fromCatalog: boolean;
   isNewCode: boolean;
   needsDescription: boolean;
@@ -174,17 +198,18 @@ export interface ResolvedItemTypeResult {
 /**
  * REGRA OFICIAL NEVE MEDICAL DE IDENTIFICAÇÃO:
  * 1. Procura primeiro o NART completo na tabela oficial (incluindo -00, -01, -09, -11).
- *    Achou o código: usa o tipo e o destino da tabela. Nunca troca.
+ *    Achou o código: usa o tipo, se é alvejado e o destino da tabela. Nunca troca.
  * 2. Se for código novo (que não está na tabela):
  *    - Se a descrição tiver a palavra CAMPO: tipo CAMPO, diferença vai para o 04.
  *    - Se NÃO tiver a palavra CAMPO: tipo COMPRESSA, diferença vai para o 06.
- *    - Salva o código novo no catálogo com o tipo, para reconhecer direto da próxima vez. Não pede para escolher tipo.
- *    - Se a planilha não tiver descrição e o código não estiver na tabela: marca "Código novo" e pede só a descrição, uma vez.
+ *    - Alvejado se a descrição tiver ALVEJADO.
+ *    - Salva o código novo no catálogo com o tipo e alvejado, para reconhecer direto da próxima vez.
+ *    - Sem descrição: COMPRESSA, não alvejado, etiqueta "Código novo – confira" e editável em Mais > Catálogo.
  */
 export function resolveItemType(
   nart: string,
   rawDescription?: string,
-  catalogMap?: Map<string, { type: 'CAMPO' | 'COMPRESSA'; description?: string } | 'CAMPO' | 'COMPRESSA'>
+  catalogMap?: Map<string, { type: 'CAMPO' | 'COMPRESSA'; description?: string; alvejado?: boolean } | 'CAMPO' | 'COMPRESSA'>
 ): ResolvedItemTypeResult {
   const cleanNart = (nart || '').trim().toUpperCase();
 
@@ -194,6 +219,7 @@ export function resolveItemType(
     return {
       type: official.type,
       description: official.description,
+      alvejado: official.alvejado,
       fromCatalog: true,
       isNewCode: false,
       needsDescription: false,
@@ -208,11 +234,15 @@ export function resolveItemType(
     const val = catalogMap.get(cleanNart)!;
     const catType: 'CAMPO' | 'COMPRESSA' = typeof val === 'string' ? val : val.type;
     const catDesc: string = typeof val === 'string' ? rawDescription || '' : (val.description || rawDescription || '');
+    const catAlvejado: boolean = typeof val === 'object' && val.alvejado !== undefined
+      ? val.alvejado
+      : isDescriptionAlvejado(catDesc);
     const destIfDiff = getDifferenceDestination(catType);
 
     return {
       type: catType,
       description: catDesc,
+      alvejado: catAlvejado,
       fromCatalog: true,
       isNewCode: false,
       needsDescription: false,
@@ -225,10 +255,11 @@ export function resolveItemType(
   // 3. Código Novo
   const desc = (rawDescription || '').trim();
   if (!desc) {
-    // Sem descrição na planilha: pede só a descrição
+    // Sem descrição: COMPRESSA, não alvejado, etiqueta "Código novo – confira"
     return {
-      type: 'REVISAR',
-      description: '',
+      type: 'COMPRESSA',
+      description: `Produto ${cleanNart} (Código novo – confira)`,
+      alvejado: false,
       fromCatalog: false,
       isNewCode: true,
       needsDescription: true,
@@ -238,30 +269,55 @@ export function resolveItemType(
     };
   }
 
-  // Com descrição: aplica a regra direta da palavra CAMPO
+  // Com descrição: aplica a regra direta da palavra CAMPO e ALVEJADO
   const inferredType = detectMaterialType(desc);
+  const inferredAlvejado = isDescriptionAlvejado(desc);
   const destIfDiff = getDifferenceDestination(inferredType);
 
   return {
     type: inferredType,
     description: desc,
+    alvejado: inferredAlvejado,
     fromCatalog: false,
     isNewCode: true,
     needsDescription: false,
-    needsConfirmation: false, // Regra Neve: não pede para o operador escolher tipo
+    needsConfirmation: false,
     destIfMatches: 'ARMAZÉM 01',
     destIfDifferenceOrNotFound: destIfDiff,
   };
 }
 
 /**
- * CÁLCULO DO DESTINO – NEVE MEDICAL:
+ * Ordena itens:
+ * 1º NÃO alvejados (normais) em cima
+ * 2º ALVEJADOS sempre embaixo
+ * Dentro de cada seção, ordena por NART ascendente
+ */
+export function sortItemsBySectionAndNart<T extends { alvejado?: boolean; nart: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const aAlv = a.alvejado ? 1 : 0;
+    const bAlv = b.alvejado ? 1 : 0;
+    if (aAlv !== bAlv) {
+      return aAlv - bAlv; // 0 (Normais) first, 1 (ALVEJADOS) second
+    }
+    return a.nart.localeCompare(b.nart);
+  });
+}
+
+function formatKgDisplay(val: number): string {
+  return new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(val);
+}
+
+/**
+ * CÁLCULO DO DESTINO – NEVE MEDICAL (Tudo em kg, comparação com 2 decimais):
  * - Físico igual ao sistema: tudo vai para o ARMAZÉM 01.
  * - Físico menor que o sistema: o físico vai para o 01 e a diferença vai para o 04 (CAMPO) ou 06 (COMPRESSA).
  * - Não encontrado: tudo vai para o 04 (CAMPO) ou 06 (COMPRESSA).
  * - Físico maior que o sistema: marcar SOBRA e pedir decisão.
  * - Nunca mandar para o 04 ou 06 um item que bateu.
- * - Ao gravar, mostrar em destaque: Tipo, Diferença e "X vai para o Armazém 01 / Y vai para o Armazém 0Z".
  */
 export function computeDestination(
   systemQty: number,
@@ -270,7 +326,7 @@ export function computeDestination(
   type: MaterialType = 'REVISAR',
   surplusDecision: SurplusDecision = 'PENDING_DECISION'
 ): DestinationResult {
-  const normSystemQty = Math.max(0, Number(systemQty) || 0);
+  const normSystemQty = Math.round((Math.max(0, Number(systemQty) || 0)) * 100) / 100;
   const destWarehouse: DestinationWarehouse = getDifferenceDestination(type);
 
   // 1. Não encontrado: tudo vai para o 04 (CAMPO) ou 06 (COMPRESSA)
@@ -284,17 +340,17 @@ export function computeDestination(
         {
           warehouse: destWarehouse,
           quantity: normSystemQty,
-          reason: `Material não localizado. Saldo sistêmico de ${normSystemQty} un vai para o ${destWarehouse}.`,
+          reason: `Material não localizado. Saldo de ${formatKgDisplay(normSystemQty)} kg vai para o ${destWarehouse}.`,
         },
       ],
       hasSurplus: false,
       surplusQty: 0,
-      summaryText: `${normSystemQty} vai para o ${destWarehouse}.`,
+      summaryText: `${formatKgDisplay(normSystemQty)} kg vai para o ${destWarehouse}.`,
     };
   }
 
-  const normPhysicalQty = Math.max(0, Number(physicalQty) || 0);
-  const diff = normPhysicalQty - normSystemQty;
+  const normPhysicalQty = Math.round((Math.max(0, Number(physicalQty) || 0)) * 100) / 100;
+  const diff = Math.round((normPhysicalQty - normSystemQty) * 100) / 100;
 
   // 2. Físico igual ao sistema: tudo vai para o ARMAZÉM 01 (Nunca mandar para 04 ou 06)
   if (diff === 0) {
@@ -312,27 +368,27 @@ export function computeDestination(
       ],
       hasSurplus: false,
       surplusQty: 0,
-      summaryText: `${normPhysicalQty} vai para o ARMAZÉM 01.`,
+      summaryText: `${formatKgDisplay(normPhysicalQty)} kg vai para o ARMAZÉM 01.`,
     };
   }
 
   // 3. Físico menor que o sistema: físico vai para o 01 e a diferença vai para o 04 (CAMPO) ou 06 (COMPRESSA)
   if (diff < 0) {
-    const missingQty = Math.abs(diff);
+    const missingQty = Math.round(Math.abs(diff) * 100) / 100;
     const allocations: DestinationAllocation[] = [];
 
     if (normPhysicalQty > 0) {
       allocations.push({
         warehouse: 'ARMAZÉM 01',
         quantity: normPhysicalQty,
-        reason: `${normPhysicalQty} un contadas fisicamente vão para o ARMAZÉM 01.`,
+        reason: `${formatKgDisplay(normPhysicalQty)} kg conferidos fisicamente vão para o ARMAZÉM 01.`,
       });
     }
 
     allocations.push({
       warehouse: destWarehouse,
       quantity: missingQty,
-      reason: `Diferença de falta (${missingQty} un) vai para o ${destWarehouse} (${type}).`,
+      reason: `Diferença de falta (${formatKgDisplay(missingQty)} kg) vai para o ${destWarehouse} (${type}).`,
     });
 
     return {
@@ -343,7 +399,7 @@ export function computeDestination(
       allocations,
       hasSurplus: false,
       surplusQty: 0,
-      summaryText: `${normPhysicalQty} vai para o ARMAZÉM 01 e ${missingQty} vai para o ${destWarehouse}.`,
+      summaryText: `${formatKgDisplay(normPhysicalQty)} kg vai para o ARMAZÉM 01 e ${formatKgDisplay(missingQty)} kg vai para o ${destWarehouse}.`,
     };
   }
 
@@ -360,12 +416,12 @@ export function computeDestination(
         {
           warehouse: 'ARMAZÉM 01',
           quantity: normPhysicalQty,
-          reason: `Total físico de ${normPhysicalQty} un alocado no ARMAZÉM 01 (inclui sobra de +${surplusQty} un).`,
+          reason: `Total físico de ${formatKgDisplay(normPhysicalQty)} kg alocado no ARMAZÉM 01 (inclui sobra de +${formatKgDisplay(surplusQty)} kg).`,
         },
       ],
       hasSurplus: true,
       surplusQty,
-      summaryText: `Sobra aprovada: todas as ${normPhysicalQty} un vão para o ARMAZÉM 01.`,
+      summaryText: `Sobra aprovada: todos os ${formatKgDisplay(normPhysicalQty)} kg vão para o ARMAZÉM 01.`,
     };
   }
 
@@ -379,12 +435,12 @@ export function computeDestination(
         {
           warehouse: 'ARMAZÉM 01',
           quantity: normSystemQty,
-          reason: `Saldo do sistema (${normSystemQty} un) destinado ao ARMAZÉM 01.`,
+          reason: `Saldo do sistema (${formatKgDisplay(normSystemQty)} kg) destinado ao ARMAZÉM 01.`,
         },
       ],
       hasSurplus: true,
       surplusQty,
-      summaryText: `${normSystemQty} vai para o ARMAZÉM 01 e sobra de +${surplusQty} un isolada.`,
+      summaryText: `${formatKgDisplay(normSystemQty)} kg vai para o ARMAZÉM 01 e sobra de +${formatKgDisplay(surplusQty)} kg isolada.`,
     };
   }
 
@@ -398,12 +454,12 @@ export function computeDestination(
       {
         warehouse: 'ARMAZÉM 01',
         quantity: normSystemQty,
-        reason: `Base do sistema (${normSystemQty} un) no ARMAZÉM 01 com sobra pendente de +${surplusQty} un.`,
+        reason: `Base do sistema (${formatKgDisplay(normSystemQty)} kg) no ARMAZÉM 01 com sobra pendente de +${formatKgDisplay(surplusQty)} kg.`,
       },
     ],
     hasSurplus: true,
     surplusQty,
-    summaryText: `Sobra detectada: físico (${normPhysicalQty}) > sistema (${normSystemQty}). Escolha a destinação da sobra.`,
+    summaryText: `Sobra detectada: físico (${formatKgDisplay(normPhysicalQty)} kg) > sistema (${formatKgDisplay(normSystemQty)} kg). Escolha a destinação da sobra.`,
   };
 }
 

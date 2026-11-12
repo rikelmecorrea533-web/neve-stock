@@ -1,26 +1,47 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Perfis de usuários: qualquer usuário autenticado pode ler nomes e matrículas; apenas o próprio usuário grava/edita seu perfil
+    match /usuarios/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Catálogo oficial de tecidos: leitura e escrita para operadores autenticados
     match /catalogo/{catalogId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
+    // Pastas de importação e subcoleção de fatias da planilha original
     match /folders/{folderId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
+
+      match /arquivo/{chunkId} {
+        allow read, write: if isSignedIn();
+      }
     }
 
+    // Itens de conferência de materiais
     match /items/{itemId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
+    // Histórico de auditoria de ações
     match /history/{historyId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
+    // Teste de conexão
     match /test/{testId} {
       allow read, write: if true;
     }
 
+    // Padrão deny
     match /{document=**} {
       allow read, write: if false;
     }

@@ -1,5 +1,17 @@
 {
   "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Perfil do operador com matrícula e nome",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "nome": { "type": "string" },
+        "matricula": { "type": "string" },
+        "criadoEm": { "type": "string" }
+      },
+      "required": ["uid", "nome", "matricula", "criadoEm"]
+    },
     "CatalogItem": {
       "title": "CatalogItem",
       "description": "Item fixo do catálogo de tecidos da Neve Medical",
@@ -9,6 +21,7 @@
         "nart": { "type": "string" },
         "description": { "type": "string" },
         "type": { "type": "string", "enum": ["CAMPO", "COMPRESSA"] },
+        "alvejado": { "type": "boolean" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" },
         "createdBy": { "type": "string" }
@@ -24,14 +37,29 @@
         "name": { "type": "string" },
         "createdAt": { "type": "string" },
         "operator": { "type": "string" },
+        "operatorMatricula": { "type": "string" },
         "itemCount": { "type": "number" },
         "totalQty": { "type": "number" },
         "checkedCount": { "type": "number" },
         "status": { "type": "string", "enum": ["PENDENTE", "EM_CONFERENCIA", "CONFERIDA_100", "VERIFICADA"] },
         "verifiedBy": { "type": "string" },
+        "verifiedByMatricula": { "type": "string" },
         "verifiedAt": { "type": "string" }
       },
       "required": ["id", "name", "createdAt", "operator"]
+    },
+    "FileChunkDoc": {
+      "title": "FileChunkDoc",
+      "description": "Fatia de até 700 KB do arquivo original em base64",
+      "type": "object",
+      "properties": {
+        "folderId": { "type": "string" },
+        "partIndex": { "type": "number" },
+        "totalParts": { "type": "number" },
+        "chunkData": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["folderId", "partIndex", "totalParts", "chunkData"]
     },
     "StockItem": {
       "title": "StockItem",
@@ -45,6 +73,8 @@
         "lot": { "type": "string" },
         "systemQty": { "type": "number" },
         "type": { "type": "string", "enum": ["CAMPO", "COMPRESSA", "REVISAR"] },
+        "alvejado": { "type": "boolean" },
+        "cycle": { "type": "string" },
         "originWarehouse": { "type": "string" },
         "physicalFound": { "type": "boolean" },
         "physicalQty": { "type": "number" },
@@ -54,7 +84,8 @@
         "transferredBy": { "type": "string" },
         "transferredAt": { "type": "string" },
         "checkedAt": { "type": "string" },
-        "checkedBy": { "type": "string" }
+        "checkedBy": { "type": "string" },
+        "checkedByMatricula": { "type": "string" }
       },
       "required": ["id", "folderId", "nart", "description", "lot", "systemQty", "type", "originWarehouse", "status"]
     },
@@ -76,6 +107,10 @@
     }
   },
   "firestore": {
+    "/usuarios/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Perfis dos operadores com matrícula e nome"
+    },
     "/catalogo/{catalogId}": {
       "schema": { "$ref": "#/entities/CatalogItem" },
       "description": "Catálogo fixo de tecidos com NART, Descrição e Tipo"
@@ -83,6 +118,10 @@
     "/folders/{folderId}": {
       "schema": { "$ref": "#/entities/Folder" },
       "description": "Pastas de importação de lotes"
+    },
+    "/folders/{folderId}/arquivo/{chunkId}": {
+      "schema": { "$ref": "#/entities/FileChunkDoc" },
+      "description": "Fatias em base64 da planilha original importada"
     },
     "/items/{itemId}": {
       "schema": { "$ref": "#/entities/StockItem" },

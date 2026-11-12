@@ -4,11 +4,38 @@ export type { MaterialType, StockStatus, DestinationAllocation, DestinationWareh
 
 export type FolderStatus = 'PENDENTE' | 'EM_CONFERENCIA' | 'CONFERIDA_100' | 'VERIFICADA';
 
+export interface UserProfile {
+  uid: string;
+  nome: string;
+  matricula: string;
+  criadoEm: string;
+}
+
+export interface StoredFileInfo {
+  fileName: string;
+  fileSize: number;
+  fileSizeKb: number;
+  fileType: string;
+  totalParts: number;
+  uploadedByNome: string;
+  uploadedByMatricula: string;
+  uploadedAt: string;
+}
+
+export interface FileChunkDoc {
+  folderId: string;
+  partIndex: number;
+  totalParts: number;
+  chunkData: string;
+  createdAt: string;
+}
+
 export interface CatalogItem {
   id: string; // normalizado pelo nart ou id aleatório
   nart: string; // Código do produto (ex: 201045 ou 79092-50040-01)
   description: string;
   type: 'CAMPO' | 'COMPRESSA';
+  alvejado: boolean;
   createdAt: string; // ISO String
   updatedAt: string; // ISO String
   createdBy?: string;
@@ -19,12 +46,14 @@ export interface StockItem {
   folderId: string;
   nart: string;
   description: string;
-  lot: string;
-  systemQty: number;
+  lot: string; // Para não alvejados: Lote. Para alvejados: Ciclo / Ciclos (ex: "11491" ou "3782 ao 3789")
+  systemQty: number; // Em kg com 2 decimais
   type: MaterialType;
+  alvejado: boolean; // true = Alvejado (usa Ciclo e fica na seção ALVEJADOS), false = Não alvejado (usa Lote)
+  cycle?: string; // Ciclo explícito (espelho de lot para alvejados)
   originWarehouse: string; // "ARMAZÉM 12"
   physicalFound: boolean | null; // null = pendente, true = sim, false = não
-  physicalQty: number | null;
+  physicalQty: number | null; // Em kg com 2 decimais
   status: StockStatus;
   allocations: DestinationAllocation[];
   difference: number | null;
@@ -33,6 +62,7 @@ export interface StockItem {
   surplusDecision?: 'PENDING_DECISION' | 'ALL_TO_01' | 'SYSTEM_TO_01_SURPLUS_FLAG';
   checkedAt?: string; // ISO String
   checkedBy?: string; // Nome do operador
+  checkedByMatricula?: string;
   notes?: string;
   updatedAt?: string;
   previousState?: string;
@@ -46,13 +76,16 @@ export interface Folder {
   name: string; // Ex: "Importação 11/11/2026 00:30 – por Rikelme"
   createdAt: string; // ISO String
   operator: string;
+  operatorMatricula?: string;
   itemCount: number;
-  totalQty: number;
+  totalQty: number; // Em kg com 2 decimais
   checkedCount: number;
   status: FolderStatus;
   verifiedBy?: string;
+  verifiedByMatricula?: string;
   verifiedAt?: string; // ISO String
   notes?: string;
+  originalFile?: StoredFileInfo;
 }
 
 export type StockFolder = Folder;
@@ -88,9 +121,10 @@ export type HistoryRecord = HistoryLog;
 export interface ImportPreviewRow {
   nart: string;
   description: string;
-  lot: string;
-  systemQty: number;
+  lot: string; // Lote (se normal) ou Ciclo (se alvejado)
+  systemQty: number; // Em kg com 2 decimais
   type: MaterialType;
+  alvejado: boolean;
   typeReviewRequired: boolean;
   notInCatalog?: boolean;
   isNewCode?: boolean;
@@ -105,6 +139,9 @@ export interface ImportPreviewRow {
   };
   isValid: boolean;
   errorMessage?: string;
+  auditNotice?: string;
+  originalLotCell?: string;
+  originalQtyCell?: string;
 }
 
 

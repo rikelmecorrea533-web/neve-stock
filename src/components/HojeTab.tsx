@@ -11,7 +11,7 @@ import {
   ArrowUpRight
 } from 'lucide-react';
 import { Folder, StockItem, HistoryLog } from '../types/stock';
-import { formatRelativeTime } from '../utils/formatters';
+import { formatRelativeTime, formatKg, formatKgNumber } from '../utils/formatters';
 
 interface HojeTabProps {
   folders: Folder[];
@@ -146,11 +146,22 @@ export const HojeTab: React.FC<HojeTabProps> = ({
                 <span className="text-xs font-mono bg-white/10 px-2 py-0.5 rounded text-blue-100 font-bold">
                   NART: {nextPendingTarget.item.nart}
                 </span>
-                <span className="text-xs bg-white/10 px-2 py-0.5 rounded text-blue-100">
-                  Lote: {nextPendingTarget.item.lot}
-                </span>
-                <span className="text-xs bg-white/10 px-2 py-0.5 rounded text-blue-100">
-                  Saldo: {nextPendingTarget.item.systemQty} un
+                {nextPendingTarget.item.alvejado ? (
+                  <>
+                    <span className="text-xs bg-purple-500/40 border border-purple-400/50 px-2 py-0.5 rounded text-purple-200 font-black uppercase">
+                      ALVEJADO
+                    </span>
+                    <span className="text-xs bg-white/10 px-2 py-0.5 rounded text-blue-100 font-mono">
+                      Ciclo: {nextPendingTarget.item.lot}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-xs bg-white/10 px-2 py-0.5 rounded text-blue-100 font-mono">
+                    Lote: {nextPendingTarget.item.lot}
+                  </span>
+                )}
+                <span className="text-xs bg-white/10 px-2 py-0.5 rounded text-blue-100 font-bold">
+                  Saldo: {formatKg(nextPendingTarget.item.systemQty)}
                 </span>
               </div>
             </div>
@@ -294,8 +305,8 @@ export const HojeTab: React.FC<HojeTabProps> = ({
               Armazém 01 (OK)
             </div>
             <div className="text-2xl font-black text-slate-900">
-              {warehouseTotals.armazem01.toLocaleString('pt-BR')}
-              <span className="text-xs font-medium text-slate-400 ml-1">un</span>
+              {formatKgNumber(warehouseTotals.armazem01)}
+              <span className="text-xs font-medium text-slate-400 ml-1">kg</span>
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5">Saldo físico localizado</div>
           </div>
@@ -307,8 +318,8 @@ export const HojeTab: React.FC<HojeTabProps> = ({
               Armazém 04 (Campo)
             </div>
             <div className="text-2xl font-black text-slate-900">
-              {warehouseTotals.armazem04.toLocaleString('pt-BR')}
-              <span className="text-xs font-medium text-slate-400 ml-1">un</span>
+              {formatKgNumber(warehouseTotals.armazem04)}
+              <span className="text-xs font-medium text-slate-400 ml-1">kg</span>
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5">Falta de Campos</div>
           </div>
@@ -320,8 +331,8 @@ export const HojeTab: React.FC<HojeTabProps> = ({
               Armazém 06 (Compressa)
             </div>
             <div className="text-2xl font-black text-slate-900">
-              {warehouseTotals.armazem06.toLocaleString('pt-BR')}
-              <span className="text-xs font-medium text-slate-400 ml-1">un</span>
+              {formatKgNumber(warehouseTotals.armazem06)}
+              <span className="text-xs font-medium text-slate-400 ml-1">kg</span>
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5">Falta de Compressas</div>
           </div>
@@ -333,8 +344,8 @@ export const HojeTab: React.FC<HojeTabProps> = ({
               Sobras
             </div>
             <div className="text-2xl font-black text-slate-900">
-              {warehouseTotals.sobras.toLocaleString('pt-BR')}
-              <span className="text-xs font-medium text-slate-400 ml-1">un</span>
+              {formatKgNumber(warehouseTotals.sobras)}
+              <span className="text-xs font-medium text-slate-400 ml-1">kg</span>
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5">Físico &gt; sistêmico</div>
           </div>

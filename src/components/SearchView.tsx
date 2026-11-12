@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { StockItem, Folder } from '../types/stock';
 import { Search, Folder as FolderIcon, CheckCircle2, Clock, AlertTriangle, ArrowRight, X } from 'lucide-react';
-import { formatDateTime } from '../utils/formatters';
+import { formatDateTime, formatKg } from '../utils/formatters';
+import { sortItemsBySectionAndNart } from '../utils/destinationRules';
 
 interface SearchViewProps {
   items: StockItem[];
@@ -30,7 +31,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
     const q = query.trim().toLowerCase();
     if (!q) return [];
 
-    return items.filter((item) => {
+    const matched = items.filter((item) => {
       const matchQuery =
         item.nart.toLowerCase().includes(q) ||
         item.lot.toLowerCase().includes(q) ||
@@ -47,6 +48,8 @@ export const SearchView: React.FC<SearchViewProps> = ({
 
       return true;
     });
+
+    return sortItemsBySectionAndNart(matched);
   }, [items, query, statusFilter]);
 
   return (
@@ -146,9 +149,20 @@ export const SearchView: React.FC<SearchViewProps> = ({
                         <span className="font-mono font-bold text-sm text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
                           {item.nart}
                         </span>
-                        <span className="text-xs font-mono font-medium text-slate-700">
-                          Lt: {item.lot}
-                        </span>
+                        {item.alvejado ? (
+                          <>
+                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200">
+                              ALVEJADO
+                            </span>
+                            <span className="text-xs font-mono font-bold text-purple-900">
+                              Ciclo: {item.lot}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-xs font-mono font-medium text-slate-700">
+                            Lt: {item.lot}
+                          </span>
+                        )}
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                             item.type === 'CAMPO' ? 'bg-blue-100 text-blue-800' : 'bg-teal-100 text-teal-800'
@@ -187,11 +201,11 @@ export const SearchView: React.FC<SearchViewProps> = ({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs pt-2 border-t border-slate-100 gap-2">
                     <div className="flex items-center gap-3 text-slate-600">
                       <span>
-                        Saldo Sistêmico: <strong>{item.systemQty.toLocaleString('pt-BR')} un</strong>
+                        Saldo Sistêmico: <strong className="text-slate-900">{formatKg(item.systemQty)}</strong>
                       </span>
                       {isChecked && item.physicalQty !== null && (
                         <span>
-                          Físico: <strong>{item.physicalQty.toLocaleString('pt-BR')} un</strong>
+                          Físico: <strong className="text-emerald-800">{formatKg(item.physicalQty)}</strong>
                         </span>
                       )}
                     </div>

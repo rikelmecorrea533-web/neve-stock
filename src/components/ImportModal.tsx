@@ -22,7 +22,7 @@ interface ImportModalProps {
   operatorName: string;
   catalog: CatalogItem[];
   existingItems: StockItem[];
-  onConfirmImport: (folderName: string, items: ImportPreviewRow[]) => Promise<void>;
+  onConfirmImport: (folderName: string, items: ImportPreviewRow[], rawFile?: File) => Promise<void>;
   onSaveCatalogItem: (item: CatalogItem) => Promise<void>;
 }
 
@@ -54,6 +54,13 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
   // Processa o arquivo selecionado
   const handleFileSelect = async (selectedFile: File) => {
+    // Validação de limite de 5 MB
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      alert('Arquivo muito grande. O limite é 5 MB.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setFile(selectedFile);
     setIsParsing(true);
     try {
@@ -102,15 +109,17 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     e.preventDefault();
     if (!quickCatalogRow || !quickDesc.trim()) return;
 
-    // Regra Neve Medical: Tem CAMPO? CAMPO. Não tem CAMPO? COMPRESSA.
+    // Regra Neve Medical: Tem CAMPO? CAMPO. Não tem CAMPO? COMPRESSA. Tem ALVEJADO? alvejado = true
     const cleanDesc = quickDesc.trim().toUpperCase();
     const inferredType: 'CAMPO' | 'COMPRESSA' = cleanDesc.includes('CAMPO') ? 'CAMPO' : 'COMPRESSA';
+    const inferredAlvejado = cleanDesc.includes('ALVEJADO');
 
     const newItem: CatalogItem = {
       id: `cat-${quickCatalogRow.nart.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
       nart: quickCatalogRow.nart,
       description: cleanDesc,
       type: inferredType,
+      alvejado: inferredAlvejado,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       createdBy: operatorName || 'Operador',
@@ -154,11 +163,13 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           if (!alreadyInCat) {
             const cleanDesc = row.description.trim().toUpperCase();
             const autoType = cleanDesc.includes('CAMPO') ? 'CAMPO' : 'COMPRESSA';
+            const autoAlvejado = row.alvejado || cleanDesc.includes('ALVEJADO');
             const catItem: CatalogItem = {
               id: `cat-${row.nart.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
               nart: row.nart,
               description: cleanDesc,
               type: autoType,
+              alvejado: autoAlvejado,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
               createdBy: operatorName || 'Auto-importação',
@@ -178,7 +189,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         ? previewRows.filter((r) => !r.alreadyExistsInOtherFolder)
         : previewRows;
 
-      await onConfirmImport(folderName, finalItems);
+      await onConfirmImport(folderName, finalItems, file || undefined);
       onClose();
     } catch (err: any) {
       alert(`Erro ao salvar importação: ${err.message}`);
@@ -336,7 +347,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 </div>
                 <div className="p-2.5 bg-blue-50 rounded-xl text-blue-900">
                   <span className="text-blue-600 block text-[10px] font-bold uppercase">Soma dos Saldos</span>
-                  <span className="text-base font-black">{totalSystemQty.toLocaleString('pt-BR')} un</span>
+                  <span className="text-base font-black">{totalSystemQty.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</span>
                 </div>
                 <div className="p-2.5 bg-amber-50 rounded-xl text-amber-900">
                   <span className="text-amber-600 block text-[10px] font-bold uppercase">Duplicatas Somadas</span>
@@ -369,80 +380,222 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 </div>
               )}
 
-              {/* Tabela de Prévia dos Itens */}
-              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-                <div className="max-h-64 overflow-y-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0">
-                      <tr>
-                        <th className="py-2.5 px-3">NART</th>
-                        <th className="py-2.5 px-3">Descrição (Catálogo)</th>
-                        <th className="py-2.5 px-3">Lote</th>
-                        <th className="py-2.5 px-3 text-right">Saldo</th>
-                        <th className="py-2.5 px-3 text-center">Tipo</th>
-                        <th className="py-2.5 px-3 text-right">Status / Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {previewRows.map((row, idx) => (
-                        <tr
-                          key={idx}
-                          className={`hover:bg-slate-50/80 transition-colors ${
-                            row.notInCatalog ? 'bg-amber-50/40' : ''
-                          }`}
-                        >
-                          <td className="py-2.5 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
-                            {row.nart}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-700 max-w-xs truncate font-medium">
-                            {row.description}
-                          </td>
-                          <td className="py-2.5 px-3 font-mono text-slate-800 whitespace-nowrap">
-                            {row.lot}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-black text-slate-900 whitespace-nowrap">
-                            {row.systemQty.toLocaleString('pt-BR')} un
-                          </td>
-                          <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                row.type === 'CAMPO'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : 'bg-teal-100 text-teal-800'
+              {/* Banner de Conferência Automática com a Célula Original */}
+              {parseResult.auditAdjustedCount > 0 && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex items-center gap-2 text-xs text-emerald-900">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>
+                    <strong>Conferência automática:</strong> {parseResult.auditAdjustedCount} valor(es) conferido(s) e garantido(s) diretamente da célula original da planilha.
+                  </span>
+                </div>
+              )}
+
+              {/* Seção 1: MATERIAIS NORMAIS (Não Alvejados) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span>
+                    <span>Materiais Normais ({previewRows.filter((r) => !r.alvejado).length})</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Soma: {previewRows.filter((r) => !r.alvejado).reduce((s, r) => s + r.systemQty, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
+                  </span>
+                </div>
+
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                  <div className="max-h-56 overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0">
+                        <tr>
+                          <th className="py-2.5 px-3">NART</th>
+                          <th className="py-2.5 px-3">Descrição (Catálogo)</th>
+                          <th className="py-2.5 px-3">Lote</th>
+                          <th className="py-2.5 px-3 text-right">Saldo (kg)</th>
+                          <th className="py-2.5 px-3 text-center">Tipo</th>
+                          <th className="py-2.5 px-3 text-right">Status / Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {previewRows
+                          .filter((r) => !r.alvejado)
+                          .map((row, idx) => (
+                            <tr
+                              key={idx}
+                              className={`hover:bg-slate-50/80 transition-colors ${
+                                row.notInCatalog ? 'bg-amber-50/40' : ''
                               }`}
                             >
-                              {row.type}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                            {row.needsDescription ? (
-                              <button
-                                onClick={() => handleOpenQuickCatalog(row)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition-all cursor-pointer shadow-xs"
-                              >
-                                <Plus className="w-3 h-3" />
-                                <span>Informar Descrição</span>
-                              </button>
-                            ) : row.isNewCode ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-blue-700 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-                                Código novo &bull; {row.type}
-                              </span>
-                            ) : row.alreadyExistsInOtherFolder ? (
-                              <span className="text-[10px] text-amber-700 font-bold">
-                                Já em {row.existingFolderInfo?.folderName || 'outra pasta'}
-                              </span>
-                            ) : row.isDuplicateInFile ? (
-                              <span className="text-[10px] text-blue-700 font-bold">
-                                Somado ({row.duplicateCountInFile}x)
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-emerald-700 font-bold">✓ Catálogo</span>
-                            )}
-                          </td>
+                              <td className="py-2.5 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                {row.nart}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-700 max-w-xs truncate font-medium">
+                                {row.description}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-slate-800 whitespace-nowrap">
+                                {row.lot}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-black text-slate-900 whitespace-nowrap">
+                                {row.systemQty.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
+                              </td>
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    row.type === 'CAMPO'
+                                      ? 'bg-blue-100 text-blue-800'
+                                      : 'bg-teal-100 text-teal-800'
+                                  }`}
+                                >
+                                  {row.type}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                {row.needsDescription ? (
+                                  <button
+                                    onClick={() => handleOpenQuickCatalog(row)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition-all cursor-pointer shadow-xs"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    <span>Informar Descrição</span>
+                                  </button>
+                                ) : row.isNewCode ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-blue-700 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                                    Código novo &bull; {row.type}
+                                  </span>
+                                ) : row.alreadyExistsInOtherFolder ? (
+                                  <span className="text-[10px] text-amber-700 font-bold">
+                                    Já em {row.existingFolderInfo?.folderName || 'outra pasta'}
+                                  </span>
+                                ) : row.isDuplicateInFile ? (
+                                  <span className="text-[10px] text-blue-700 font-bold">
+                                    Somado ({row.duplicateCountInFile}x)
+                                  </span>
+                                ) : (
+                                  <div className="flex flex-col items-end">
+                                    <span className="text-[10px] text-emerald-700 font-bold">✓ Catálogo</span>
+                                    {row.auditNotice && (
+                                      <span className="text-[9px] text-emerald-600 font-medium" title={row.auditNotice}>
+                                        ✓ Célula conferida
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção 2: ALVEJADOS (SEMPRE EMBAIXO) */}
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center justify-between px-1">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-purple-800 flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-purple-600 inline-block"></span>
+                    <span>ALVEJADOS – Ciclos ({previewRows.filter((r) => r.alvejado).length})</span>
+                  </h4>
+                  <span className="text-[11px] text-purple-700 font-bold">
+                    Soma: {previewRows.filter((r) => r.alvejado).reduce((s, r) => s + r.systemQty, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
+                  </span>
+                </div>
+
+                <div className="border-2 border-purple-200 bg-purple-50/20 rounded-xl overflow-hidden shadow-xs">
+                  <div className="max-h-56 overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-purple-100 text-purple-950 font-bold sticky top-0">
+                        <tr>
+                          <th className="py-2.5 px-3">NART</th>
+                          <th className="py-2.5 px-3">Descrição (Catálogo)</th>
+                          <th className="py-2.5 px-3">Ciclo (ou Ciclos)</th>
+                          <th className="py-2.5 px-3 text-right">Saldo (kg)</th>
+                          <th className="py-2.5 px-3 text-center">Tipo</th>
+                          <th className="py-2.5 px-3 text-right">Status / Ação</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-purple-100">
+                        {previewRows.filter((r) => r.alvejado).length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-4 text-center text-slate-400">
+                              Nenhum tecido alvejado nesta planilha.
+                            </td>
+                          </tr>
+                        ) : (
+                          previewRows
+                            .filter((r) => r.alvejado)
+                            .map((row, idx) => (
+                              <tr
+                                key={idx}
+                                className={`hover:bg-purple-100/40 transition-colors ${
+                                  row.notInCatalog ? 'bg-amber-50/40' : ''
+                                }`}
+                              >
+                                <td className="py-2.5 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5">
+                                    <span>{row.nart}</span>
+                                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-purple-200 text-purple-900">
+                                      ALVEJADO
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-700 max-w-xs truncate font-medium">
+                                  {row.description}
+                                </td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-purple-900 whitespace-nowrap">
+                                  {row.lot}
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-black text-slate-900 whitespace-nowrap">
+                                  {row.systemQty.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
+                                </td>
+                                <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                      row.type === 'CAMPO'
+                                        ? 'bg-blue-100 text-blue-800'
+                                        : 'bg-teal-100 text-teal-800'
+                                    }`}
+                                  >
+                                    {row.type}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                  {row.needsDescription ? (
+                                    <button
+                                      onClick={() => handleOpenQuickCatalog(row)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition-all cursor-pointer shadow-xs"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                      <span>Informar Descrição</span>
+                                    </button>
+                                  ) : row.isNewCode ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 font-bold bg-purple-100 border border-purple-300 px-2 py-0.5 rounded">
+                                      Código novo &bull; {row.type}
+                                    </span>
+                                  ) : row.alreadyExistsInOtherFolder ? (
+                                    <span className="text-[10px] text-amber-700 font-bold">
+                                      Já em {row.existingFolderInfo?.folderName || 'outra pasta'}
+                                    </span>
+                                  ) : row.isDuplicateInFile ? (
+                                    <span className="text-[10px] text-purple-700 font-bold">
+                                      Somado ({row.duplicateCountInFile}x)
+                                    </span>
+                                  ) : (
+                                    <div className="flex flex-col items-end">
+                                      <span className="text-[10px] text-emerald-700 font-bold">✓ Catálogo</span>
+                                      {row.auditNotice && (
+                                        <span className="text-[9px] text-emerald-600 font-medium" title={row.auditNotice}>
+                                          ✓ Célula conferida
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </div>

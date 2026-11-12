@@ -5,8 +5,13 @@ import {
   CatalogItem,
   HistoryLog,
   ImportPreviewRow,
+  UserProfile,
 } from './types/stock';
 import {
+  subscribeToAuth,
+  logoutUser,
+  saveOriginalFileChunks,
+  migrateLocalFoldersToFirestore,
   subscribeToFolders,
   subscribeToItems,
   subscribeToCatalog,
@@ -38,15 +43,20 @@ import { FolderDetailView } from './components/FolderDetailView';
 import { CatalogoView } from './components/CatalogoView';
 import { SearchView } from './components/SearchView';
 import { HistoryTab } from './components/HistoryTab';
-import { OperatorModal } from './components/OperatorModal';
 import { ImportModal } from './components/ImportModal';
+import { LoginScreen } from './components/LoginScreen';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
+import { formatKg } from './utils/formatters';
+import { Loader2, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
-  // Operador salvo localmente no aparelho
-  const [operator, setOperator] = useState<string>(() => {
-    return localStorage.getItem('neve_stock_operator_v2') || '';
-  });
-  const [isOperatorModalOpen, setIsOperatorModalOpen] = useState<boolean>(!operator);
+  // Autenticação do Usuário por Matrícula
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
+
+  // Mensagem toast temporária (ex: "X Pastas enviadas para o sistema")
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Status de rede & sincronização
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
@@ -68,10 +78,29 @@ export default function App() {
   // Modal de importação de planilha
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
 
-  // Inicialização e listeners em tempo real do Firebase
+  // Listener de Autenticação Firebase
   useEffect(() => {
+    const unsubAuth = subscribeToAuth((profile) => {
+      setCurrentUser(profile);
+      setAuthLoading(false);
+    });
+
+    return () => unsubAuth();
+  }, []);
+
+  // Inicialização e listeners em tempo real do Firebase quando o usuário estiver autenticado
+  useEffect(() => {
+    if (!currentUser) return;
+
     testFirestoreConnection();
     seedInitialDataIfEmpty();
+
+    // Migração automática de pastas salvas apenas no aparelho para o Firestore compartilhado
+    migrateLocalFoldersToFirestore(currentUser).then((migratedCount) => {
+      if (migratedCount > 0) {
+        showToast(`${migratedCount} ${migratedCount === 1 ? 'Pasta enviada' : 'Pastas enviadas'} para o sistema`);
+      }
+    });
 
     const unsubFolders = subscribeToFolders(
       (updatedFolders) => {
@@ -123,15 +152,29 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
+  }, [currentUser]);
 
-  // Salvar Operador
-  const handleSaveOperator = (name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    localStorage.setItem('neve_stock_operator_v2', trimmed);
-    setOperator(trimmed);
-    setIsOperatorModalOpen(false);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+  };
+
+  // Nome oficial do operador logado: "Nome (Matrícula)"
+  const operator = useMemo(() => {
+    if (!currentUser) return 'Operador';
+    return `${currentUser.nome} (${currentUser.matricula})`;
+  }, [currentUser]);
+
+  // Logout do usuário
+  const handleLogout = async () => {
+    if (window.confirm('Deseja realmente sair da conta deste aparelho?')) {
+      await logoutUser();
+      setCurrentUser(null);
+      setActiveFolderId(null);
+      setCurrentTab('hoje');
+    }
   };
 
   // Pasta selecionada
@@ -141,7 +184,12 @@ export default function App() {
   }, [folders, activeFolderId]);
 
   // Criação de Nova Pasta de Importação
-  const handleConfirmImport = async (folderName: string, previewRows: ImportPreviewRow[]) => {
+  const handleConfirmImport = async (
+    folderName: string,
+    previewRows: ImportPreviewRow[],
+    rawFile?: File
+  ) => {
+    if (!currentUser) return;
     setIsSyncing(true);
     const now = new Date().toISOString();
     const folderId = `folder-${Date.now()}`;
@@ -150,7 +198,8 @@ export default function App() {
       id: folderId,
       name: folderName,
       createdAt: now,
-      operator: operator || 'Operador',
+      operator: operator,
+      operatorMatricula: currentUser.matricula,
       itemCount: previewRows.length,
       totalQty: previewRows.reduce((acc, r) => acc + (r.systemQty || 0), 0),
       checkedCount: 0,
@@ -163,8 +212,10 @@ export default function App() {
       nart: row.nart,
       description: row.description,
       lot: row.lot,
+      cycle: row.alvejado ? row.lot : undefined,
       systemQty: row.systemQty,
       type: row.type,
+      alvejado: !!row.alvejado,
       originWarehouse: 'ARMAZÉM 12',
       physicalFound: null,
       physicalQty: null,
@@ -181,9 +232,9 @@ export default function App() {
     const log: HistoryLog = {
       id: `log-import-${Date.now()}`,
       timestamp: now,
-      operator: operator || 'Operador',
+      operator: operator,
       action: 'IMPORT',
-      details: `Importação de "${folderName}" com ${newItems.length} materiais totalizando ${newFolder.totalQty} unidades.`,
+      details: `Importação de "${folderName}" com ${newItems.length} materiais totalizando ${formatKg(newFolder.totalQty)}.`,
       folderId,
     };
 
@@ -192,6 +243,18 @@ export default function App() {
     setItems((prev) => [...newItems, ...prev]);
 
     await saveImportBatch(newFolder, newItems, log);
+
+    // Salva arquivo original fatiado na subcoleção se fornecido
+    if (rawFile) {
+      try {
+        const fileInfo = await saveOriginalFileChunks(folderId, rawFile, currentUser);
+        setFolders((prev) =>
+          prev.map((f) => (f.id === folderId ? { ...f, originalFile: fileInfo } : f))
+        );
+      } catch (err: any) {
+        console.warn('Erro ao guardar planilha original:', err);
+      }
+    }
 
     // Abre a pasta recém criada para conferência imediata
     setActiveFolderId(folderId);
@@ -207,29 +270,35 @@ export default function App() {
   ) => {
     setIsSyncing(true);
 
-    // Atualização otimista do item
-    setItems((prev) => prev.map((i) => (i.id === updatedItem.id ? updatedItem : i)));
+    const itemToSave: StockItem = {
+      ...updatedItem,
+      checkedBy: action === 'CONFERENCIA' ? operator : undefined,
+      checkedByMatricula: action === 'CONFERENCIA' ? currentUser?.matricula : undefined,
+    };
 
-    await saveStockItem(updatedItem);
+    // Atualização otimista do item
+    setItems((prev) => prev.map((i) => (i.id === itemToSave.id ? itemToSave : i)));
+
+    await saveStockItem(itemToSave);
 
     // Registra log de auditoria
     const log: HistoryLog = {
       id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       timestamp: new Date().toISOString(),
-      operator: operator || 'Operador',
-      nart: updatedItem.nart,
-      description: updatedItem.description,
-      lot: updatedItem.lot,
+      operator: operator,
+      nart: itemToSave.nart,
+      description: itemToSave.description,
+      lot: itemToSave.lot,
       action,
       details,
-      folderId: updatedItem.folderId,
+      folderId: itemToSave.folderId,
     };
     await addHistoryLog(log);
 
     // Atualiza contadores e status dinâmico da pasta
     if (activeFolder) {
       const folderItems = items
-        .map((i) => (i.id === updatedItem.id ? updatedItem : i))
+        .map((i) => (i.id === itemToSave.id ? itemToSave : i))
         .filter((i) => i.folderId === activeFolder.id);
 
       const checkedCount = folderItems.filter((i) => i.status !== 'PENDENTE').length;
@@ -253,10 +322,10 @@ export default function App() {
     setIsSyncing(false);
   };
 
-  // Verificar pasta (Ação da Chefia ao atingir 100%)
+  // Verificar pasta (Ação realizada por outro operador ao atingir 100%)
   const handleVerifyFolder = async (folderId: string) => {
     setIsSyncing(true);
-    await verifyFolder(folderId, operator || 'Operador');
+    await verifyFolder(folderId, operator);
     setIsSyncing(false);
   };
 
@@ -266,7 +335,7 @@ export default function App() {
     if (activeFolderId === folderId) {
       setActiveFolderId(null);
     }
-    await deleteFolderCascade(folderId, folderName, operator || 'Operador');
+    await deleteFolderCascade(folderId, folderName, operator);
     setIsSyncing(false);
   };
 
@@ -286,7 +355,7 @@ export default function App() {
           : i
       )
     );
-    await toggleItemTransferred(itemId, transferred, operator || 'Operador');
+    await toggleItemTransferred(itemId, transferred, operator);
     setIsSyncing(false);
   };
 
@@ -309,6 +378,21 @@ export default function App() {
     setIsSyncing(false);
   };
 
+  // Se ainda estiver checando o estado de autenticação
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-400 mb-3" />
+        <p className="text-sm font-semibold tracking-wide">Carregando NEVE STOCK...</p>
+      </div>
+    );
+  }
+
+  // Se NÃO estiver logado: tela bloqueada com Login por Matrícula
+  if (!currentUser) {
+    return <LoginScreen onLoginSuccess={(profile) => setCurrentUser(profile)} />;
+  }
+
   // Determina se estamos na tela inicial (Aba Hoje sem pasta aberta)
   const isHomeScreen = currentTab === 'hoje' && !activeFolder;
 
@@ -325,6 +409,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col text-slate-900 font-sans antialiased selection:bg-blue-900 selection:text-white">
+      {/* Toast flutuante de notificação */}
+      {toastMessage && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 bg-[#0a192f] text-white px-4 py-2.5 rounded-2xl shadow-xl border border-slate-700 text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Cabeçalho */}
       <Header
         isHome={isHomeScreen}
@@ -340,7 +432,7 @@ export default function App() {
             : undefined
         }
         operatorName={operator}
-        onOpenOperatorModal={() => setIsOperatorModalOpen(true)}
+        onOpenOperatorModal={() => setIsChangePasswordOpen(true)}
         isOnline={isOnline}
         isSyncing={isSyncing}
       />
@@ -353,6 +445,7 @@ export default function App() {
             folder={activeFolder}
             items={items}
             operatorName={operator}
+            currentMatricula={currentUser.matricula}
             initialItemId={activeFolderInitialItemId}
             onBack={() => {
               setActiveFolderId(null);
@@ -380,6 +473,7 @@ export default function App() {
                   surplusDecision: 'PENDING_DECISION',
                   checkedAt: undefined,
                   checkedBy: undefined,
+                  checkedByMatricula: undefined,
                   updatedAt: new Date().toISOString(),
                 };
                 await handleSaveStockItem(
@@ -470,15 +564,16 @@ export default function App() {
           setActiveFolderId(null);
           setCurrentTab(tab);
         }}
-        onOpenOperatorModal={() => setIsOperatorModalOpen(true)}
+        currentUser={currentUser}
+        onOpenChangePassword={() => setIsChangePasswordOpen(true)}
+        onLogout={handleLogout}
       />
 
-      {/* Modal de Identificação do Operador */}
-      <OperatorModal
-        isOpen={isOperatorModalOpen}
-        currentOperator={operator}
-        onSave={handleSaveOperator}
-        canClose={!!operator}
+      {/* Modal de Troca de Senha */}
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        onClose={() => setIsChangePasswordOpen(false)}
+        matricula={currentUser.matricula}
       />
 
       {/* Modal de Importação com IA Gemini e Cruzamento com Catálogo */}

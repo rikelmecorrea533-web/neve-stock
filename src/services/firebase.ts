@@ -1,5 +1,14 @@
 import { initializeApp, getApps } from 'firebase/app';
 import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  updatePassword,
+  onAuthStateChanged,
+  User as FirebaseUser,
+} from 'firebase/auth';
+import {
   getFirestore,
   collection,
   doc,
@@ -7,6 +16,7 @@ import {
   deleteDoc,
   updateDoc,
   onSnapshot,
+  getDoc,
   getDocFromServer,
   query,
   orderBy,
@@ -14,13 +24,22 @@ import {
   getDocs,
   where,
 } from 'firebase/firestore';
-import { StockItem, Folder, HistoryLog, CatalogItem } from '../types/stock';
+import {
+  StockItem,
+  Folder,
+  HistoryLog,
+  CatalogItem,
+  UserProfile,
+  StoredFileInfo,
+  FileChunkDoc,
+} from '../types/stock';
 import { INITIAL_CATALOG_ITEMS } from './defaultData';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Inicialização segura do Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const auth = getAuth(app);
 
 export enum OperationType {
   CREATE = 'create',
@@ -45,14 +64,339 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: null,
-      email: null,
+      userId: auth.currentUser?.uid || null,
+      email: auth.currentUser?.email || null,
     },
     operationType,
     path,
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   return errInfo;
+}
+
+// Converte matrícula ou usuário para e-mail interno transparente
+export function matriculaToEmail(matricula: string): string {
+  const clean = matricula
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[^a-z0-9_.-]/g, '');
+  return `${clean}@neve-stock.app`;
+}
+
+// Criação de Conta (Login por Matrícula)
+export async function registerWithMatricula(
+  nome: string,
+  matricula: string,
+  senha: string
+): Promise<UserProfile> {
+  const cleanMatricula = matricula.trim();
+  const email = matriculaToEmail(cleanMatricula);
+
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, senha);
+    const userProfile: UserProfile = {
+      uid: cred.user.uid,
+      nome: nome.trim(),
+      matricula: cleanMatricula,
+      criadoEm: new Date().toISOString(),
+    };
+
+    // Salva perfil no Firestore em usuarios/{uid}
+    await setDoc(doc(db, 'usuarios', cred.user.uid), userProfile);
+    return userProfile;
+  } catch (error: any) {
+    if (error.code === 'auth/operation-not-allowed') {
+      throw new Error('AUTH_OPERATION_NOT_ALLOWED');
+    }
+    if (error.code === 'auth/email-already-in-use') {
+      throw new Error('Essa matrícula já tem login.');
+    }
+    if (error.code === 'auth/weak-password') {
+      throw new Error('A senha deve ter pelo menos 6 caracteres.');
+    }
+    if (error.code === 'auth/network-request-failed') {
+      throw new Error('Sem conexão com a internet. Verifique sua rede.');
+    }
+    throw new Error(error.message || 'Erro ao criar conta. Tente novamente.');
+  }
+}
+
+// Login por Matrícula
+export async function loginWithMatricula(
+  matricula: string,
+  senha: string
+): Promise<UserProfile> {
+  const cleanMatricula = matricula.trim();
+  const email = matriculaToEmail(cleanMatricula);
+
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email, senha);
+    const userDocRef = doc(db, 'usuarios', cred.user.uid);
+    const userSnap = await getDoc(userDocRef);
+
+    if (userSnap.exists()) {
+      return userSnap.data() as UserProfile;
+    }
+
+    // Se o documento do perfil ainda não existir, cria perfil automático com a matrícula
+    const fallbackProfile: UserProfile = {
+      uid: cred.user.uid,
+      nome: cleanMatricula,
+      matricula: cleanMatricula,
+      criadoEm: new Date().toISOString(),
+    };
+    await setDoc(userDocRef, fallbackProfile);
+    return fallbackProfile;
+  } catch (error: any) {
+    if (error.code === 'auth/operation-not-allowed') {
+      throw new Error('AUTH_OPERATION_NOT_ALLOWED');
+    }
+    if (
+      error.code === 'auth/wrong-password' ||
+      error.code === 'auth/invalid-credential'
+    ) {
+      throw new Error('Senha incorreta.');
+    }
+    if (
+      error.code === 'auth/user-not-found' ||
+      error.code === 'auth/invalid-email'
+    ) {
+      throw new Error('Matrícula não encontrada. Verifique ou crie seu login.');
+    }
+    if (error.code === 'auth/network-request-failed') {
+      throw new Error('Sem conexão com a internet. Verifique sua rede.');
+    }
+    if (error.code === 'auth/too-many-requests') {
+      throw new Error('Muitas tentativas sem sucesso. Aguarde alguns minutos e tente novamente.');
+    }
+    throw new Error(error.message || 'Erro ao realizar login.');
+  }
+}
+
+// Troca de Senha do Usuário Logado
+export async function changeUserPassword(novaSenha: string): Promise<void> {
+  if (!auth.currentUser) {
+    throw new Error('Nenhum usuário conectado.');
+  }
+  if (novaSenha.length < 6) {
+    throw new Error('A nova senha deve ter no mínimo 6 caracteres.');
+  }
+  try {
+    await updatePassword(auth.currentUser, novaSenha);
+  } catch (error: any) {
+    if (error.code === 'auth/requires-recent-login') {
+      throw new Error('Por segurança, saia e entre novamente antes de alterar a senha.');
+    }
+    throw new Error(error.message || 'Erro ao alterar a senha.');
+  }
+}
+
+// Logout
+export async function logoutUser(): Promise<void> {
+  await signOut(auth);
+}
+
+// Observer de autenticação em tempo real
+export function subscribeToAuth(
+  onProfileChange: (profile: UserProfile | null) => void
+) {
+  return onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
+    if (!user) {
+      onProfileChange(null);
+      return;
+    }
+
+    try {
+      const snap = await getDoc(doc(db, 'usuarios', user.uid));
+      if (snap.exists()) {
+        onProfileChange(snap.data() as UserProfile);
+      } else {
+        const emailPrefix = user.email ? user.email.split('@')[0] : 'Operador';
+        const fallback: UserProfile = {
+          uid: user.uid,
+          nome: emailPrefix,
+          matricula: emailPrefix,
+          criadoEm: new Date().toISOString(),
+        };
+        await setDoc(doc(db, 'usuarios', user.uid), fallback);
+        onProfileChange(fallback);
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar perfil do usuário:', e);
+      const emailPrefix = user.email ? user.email.split('@')[0] : 'Operador';
+      onProfileChange({
+        uid: user.uid,
+        nome: emailPrefix,
+        matricula: emailPrefix,
+        criadoEm: new Date().toISOString(),
+      });
+    }
+  });
+}
+
+// Helper: Converte arquivo para base64
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result);
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
+// Salva arquivo original fatiado em pedaços de até 600 KB na subcoleção folders/{folderId}/arquivo/{partIndex}
+export async function saveOriginalFileChunks(
+  folderId: string,
+  file: File,
+  user: UserProfile
+): Promise<StoredFileInfo> {
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('Arquivo muito grande. O limite é 5 MB.');
+  }
+
+  const base64Data = await fileToBase64(file);
+  const CHUNK_SIZE = 600 * 1024; // 600 KB por fatia (limite doc Firestore é 1 MB)
+  const totalParts = Math.ceil(base64Data.length / CHUNK_SIZE);
+
+  const batch = writeBatch(db);
+  const now = new Date().toISOString();
+
+  for (let i = 0; i < totalParts; i++) {
+    const chunkSlice = base64Data.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+    const chunkDocRef = doc(db, 'folders', folderId, 'arquivo', `part_${i}`);
+    const chunkData: FileChunkDoc = {
+      folderId,
+      partIndex: i,
+      totalParts,
+      chunkData: chunkSlice,
+      createdAt: now,
+    };
+    batch.set(chunkDocRef, chunkData);
+  }
+
+  const fileInfo: StoredFileInfo = {
+    fileName: file.name,
+    fileSize: file.size,
+    fileSizeKb: Math.max(1, Math.round(file.size / 1024)),
+    fileType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    totalParts,
+    uploadedByNome: user.nome,
+    uploadedByMatricula: user.matricula,
+    uploadedAt: now,
+  };
+
+  // Atualiza a pasta com as informações do arquivo original
+  batch.update(doc(db, 'folders', folderId), {
+    originalFile: fileInfo,
+  });
+
+  await batch.commit();
+  return fileInfo;
+}
+
+// Baixa o arquivo original remontando os pedaços da subcoleção folders/{folderId}/arquivo
+export async function downloadOriginalFile(
+  folderId: string,
+  originalFile: StoredFileInfo
+): Promise<void> {
+  const partsSnap = await getDocs(
+    collection(db, 'folders', folderId, 'arquivo')
+  );
+
+  if (partsSnap.empty) {
+    throw new Error('Nenhum dado encontrado para o arquivo original desta pasta.');
+  }
+
+  const chunks: FileChunkDoc[] = [];
+  partsSnap.forEach((d) => {
+    chunks.push(d.data() as FileChunkDoc);
+  });
+
+  chunks.sort((a, b) => a.partIndex - b.partIndex);
+  const fullBase64 = chunks.map((c) => c.chunkData).join('');
+
+  // Converte dataURL base64 para Blob e faz download no aparelho
+  const res = await fetch(fullBase64);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = originalFile.fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Migração automática de pastas locais antigas para o Firestore compartilhado
+export async function migrateLocalFoldersToFirestore(
+  user: UserProfile
+): Promise<number> {
+  try {
+    const migratedFlag = localStorage.getItem('neve_stock_migrated_v3');
+    if (migratedFlag === 'true') return 0;
+
+    const rawLocalFolders = localStorage.getItem('neve_stock_folders_v2');
+    const rawLocalItems = localStorage.getItem('neve_stock_items_v2');
+
+    if (!rawLocalFolders) {
+      localStorage.setItem('neve_stock_migrated_v3', 'true');
+      return 0;
+    }
+
+    const localFolders: Folder[] = JSON.parse(rawLocalFolders);
+    const localItems: StockItem[] = rawLocalItems ? JSON.parse(rawLocalItems) : [];
+
+    if (!Array.isArray(localFolders) || localFolders.length === 0) {
+      localStorage.setItem('neve_stock_migrated_v3', 'true');
+      return 0;
+    }
+
+    // Busca quais pastas já existem no Firestore para não sobrescrever
+    const existingFoldersSnap = await getDocs(collection(db, 'folders'));
+    const existingIds = new Set(existingFoldersSnap.docs.map((d) => d.id));
+
+    let migratedCount = 0;
+    for (const folder of localFolders) {
+      if (!existingIds.has(folder.id)) {
+        const folderItems = localItems.filter((i) => i.folderId === folder.id);
+        const log: HistoryLog = {
+          id: `log-migrate-${folder.id}`,
+          timestamp: new Date().toISOString(),
+          operator: `${user.nome} (${user.matricula})`,
+          action: 'IMPORT',
+          details: `Pasta "${folder.name}" migrada automaticamente do aparelho para o Firestore compartilhado.`,
+          folderId: folder.id,
+        };
+
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'folders', folder.id), {
+          ...folder,
+          operator: folder.operator || `${user.nome} (${user.matricula})`,
+          operatorMatricula: folder.operatorMatricula || user.matricula,
+        });
+
+        for (const item of folderItems) {
+          batch.set(doc(db, 'items', item.id), item);
+        }
+
+        batch.set(doc(db, 'history', log.id), log);
+        await batch.commit();
+        migratedCount++;
+      }
+    }
+
+    localStorage.setItem('neve_stock_migrated_v3', 'true');
+    return migratedCount;
+  } catch (error) {
+    console.warn('Erro ao verificar ou migrar pastas locais:', error);
+    return 0;
+  }
 }
 
 // Testa a conexão inicial com o servidor Firestore

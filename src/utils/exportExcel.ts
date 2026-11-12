@@ -6,7 +6,7 @@ export function exportConferenceToExcel(items: StockItem[], folderName: string =
   const rows = items.map((item) => {
     // Formatar armazéns destino
     const destinos = item.allocations && item.allocations.length > 0
-      ? item.allocations.map((a) => `${a.warehouse} (${a.quantity} un)`).join(' + ')
+      ? item.allocations.map((a) => `${a.warehouse} (${a.quantity} kg)`).join(' + ')
       : item.status === 'PENDENTE'
       ? 'Pendente de conferência'
       : '-';
@@ -14,11 +14,12 @@ export function exportConferenceToExcel(items: StockItem[], folderName: string =
     return {
       'NART': item.nart,
       'Descrição': item.description,
-      'Lote': item.lot,
+      'Alvejado': item.alvejado ? 'SIM' : 'NÃO',
+      'Lote / Ciclo': item.lot,
       'Origem': item.originWarehouse || 'ARMAZÉM 12',
-      'Saldo Sistêmico': item.systemQty,
-      'Quantidade Física': item.physicalFound === false ? 0 : (item.physicalQty ?? '-'),
-      'Diferença': item.difference !== null ? item.difference : '-',
+      'Saldo Sistêmico (kg)': item.systemQty,
+      'Quantidade Física (kg)': item.physicalFound === false ? 0 : (item.physicalQty ?? '-'),
+      'Diferença (kg)': item.difference !== null ? item.difference : '-',
       'Tipo': item.type,
       'Armazém Destino': destinos,
       'Status': item.status,

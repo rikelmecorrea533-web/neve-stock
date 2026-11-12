@@ -1,6 +1,6 @@
 import React from 'react';
 import { StockItem } from '../types/stock';
-import { formatQuantity } from '../utils/formatters';
+import { formatQuantity, formatKgNumber } from '../utils/formatters';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -197,9 +197,9 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
               <div className="mt-3 pt-2 border-t border-black/5 flex items-baseline justify-between">
                 <div>
                   <span className="text-lg font-black tracking-tight">
-                    {formatQuantity(card.totalQty)}
+                    {formatKgNumber(card.totalQty)}
                   </span>
-                  <span className="text-[10px] ml-1 opacity-70 font-semibold">un.</span>
+                  <span className="text-[10px] ml-1 opacity-70 font-semibold">kg</span>
                 </div>
                 <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${card.badgeColor}`}>
                   {card.itemCount} {card.itemCount === 1 ? 'item' : 'itens'}

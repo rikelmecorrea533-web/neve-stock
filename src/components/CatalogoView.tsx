@@ -28,6 +28,7 @@ export const CatalogoView: React.FC<CatalogoViewProps> = ({
   const [formNart, setFormNart] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [formType, setFormType] = useState<'CAMPO' | 'COMPRESSA'>('CAMPO');
+  const [formAlvejado, setFormAlvejado] = useState(false);
 
   // Modal de Exclusão com Confirmação
   const [itemToDelete, setItemToDelete] = useState<CatalogItem | null>(null);
@@ -53,11 +54,13 @@ export const CatalogoView: React.FC<CatalogoViewProps> = ({
   const counts = useMemo(() => {
     let campos = 0;
     let compressas = 0;
+    let alvejados = 0;
     catalog.forEach((i) => {
       if (i.type === 'CAMPO') campos++;
       else compressas++;
+      if (i.alvejado) alvejados++;
     });
-    return { total: catalog.length, campos, compressas };
+    return { total: catalog.length, campos, compressas, alvejados };
   }, [catalog]);
 
   // Abre form para adicionar novo
@@ -66,6 +69,7 @@ export const CatalogoView: React.FC<CatalogoViewProps> = ({
     setFormNart('');
     setFormDesc('');
     setFormType('CAMPO');
+    setFormAlvejado(false);
     setIsFormOpen(true);
   };
 
@@ -75,10 +79,11 @@ export const CatalogoView: React.FC<CatalogoViewProps> = ({
     setFormNart(item.nart);
     setFormDesc(item.description);
     setFormType(item.type);
+    setFormAlvejado(item.alvejado ?? item.description.toUpperCase().includes('ALVEJAD'));
     setIsFormOpen(true);
   };
 
-  // Ao alterar a descrição, auto-detecta o tipo
+  // Ao alterar a descrição, auto-detecta o tipo e alvejado
   const handleDescChange = (val: string) => {
     setFormDesc(val);
     const upper = val.toUpperCase();
@@ -86,6 +91,9 @@ export const CatalogoView: React.FC<CatalogoViewProps> = ({
       setFormType('COMPRESSA');
     } else if (upper.includes('CAMPO')) {
       setFormType('CAMPO');
+    }
+    if (upper.includes('ALVEJAD')) {
+      setFormAlvejado(true);
     }
   };
 
@@ -100,6 +108,7 @@ export const CatalogoView: React.FC<CatalogoViewProps> = ({
       nart: cleanNart,
       description: formDesc.trim().toUpperCase(),
       type: formType,
+      alvejado: formAlvejado,
       createdAt: editingItem ? editingItem.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       createdBy: editingItem ? editingItem.createdBy : operatorName || 'Operador',
@@ -253,6 +262,7 @@ export const CatalogoView: React.FC<CatalogoViewProps> = ({
                   <th className="py-3 px-4">NART</th>
                   <th className="py-3 px-4">Descrição do Tecido</th>
                   <th className="py-3 px-4">Tipo</th>
+                  <th className="py-3 px-4">Alvejado</th>
                   <th className="py-3 px-4 text-right">Ações</th>
                 </tr>
               </thead>
@@ -275,6 +285,17 @@ export const CatalogoView: React.FC<CatalogoViewProps> = ({
                       >
                         {item.type}
                       </span>
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      {item.alvejado ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase bg-purple-100 text-purple-900 border border-purple-200">
+                          ALVEJADO (Ciclo)
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 font-medium">
+                          Normal (Lote)
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
@@ -378,6 +399,23 @@ export const CatalogoView: React.FC<CatalogoViewProps> = ({
                     COMPRESSA
                   </button>
                 </div>
+              </div>
+
+              <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-purple-950 block">
+                    Tecido Alvejado (Ciclo)
+                  </span>
+                  <span className="text-[11px] text-purple-700">
+                    Muda o campo "Lote" para "Ciclo" e agrupa no Mapa de Alvejados
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formAlvejado}
+                  onChange={(e) => setFormAlvejado(e.target.checked)}
+                  className="w-5 h-5 rounded border-purple-300 text-purple-700 focus:ring-purple-600 cursor-pointer"
+                />
               </div>
 
               <div className="flex gap-2 pt-2 border-t border-slate-100">

@@ -5,7 +5,8 @@ import {
   DestinationResult,
   SurplusDecision,
 } from '../utils/destinationRules';
-import { formatQuantity } from '../utils/formatters';
+import { formatQuantity, formatKg, formatKgNumber } from '../utils/formatters';
+import { parseBrazilianNumber } from '../utils/excelService';
 import {
   CheckCircle2,
   XCircle,
@@ -91,7 +92,12 @@ export const ConferenciaModal: React.FC<ConferenciaModalProps> = ({
       updatedAt: new Date().toISOString(),
     };
 
-    const diffStr = destinationResult.difference === 0 ? 'Bateu 100%' : destinationResult.difference < 0 ? `Falta ${destinationResult.difference} un` : `Sobra +${destinationResult.difference} un`;
+    const diffStr =
+      destinationResult.difference === 0
+        ? 'Bateu 100%'
+        : destinationResult.difference < 0
+        ? `Falta ${formatKg(Math.abs(destinationResult.difference))}`
+        : `Sobra +${formatKg(destinationResult.difference)}`;
     const details = `Tipo: ${selectedType} | Diferença: ${diffStr} | ${destinationResult.summaryText}`;
 
     onConfirm(updated, 'CONFERENCIA', details);
@@ -257,31 +263,30 @@ export const ConferenciaModal: React.FC<ConferenciaModalProps> = ({
             <div className="space-y-2 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                  Quantidade Física Contada
+                  Quantidade Física Contada (kg)
                 </label>
                 <span className="text-xs font-bold text-blue-700">
-                  {physicalQty === item.systemQty
+                  {Math.abs(physicalQty - item.systemQty) < 0.005
                     ? '✓ Bate com sistema'
                     : physicalQty < item.systemQty
-                    ? `Falta de ${item.systemQty - physicalQty} un.`
-                    : `Sobra de +${physicalQty - item.systemQty} un.`}
+                    ? `Falta de ${formatKg(item.systemQty - physicalQty)}`
+                    : `Sobra de +${formatKg(physicalQty - item.systemQty)}`}
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
                 <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={physicalQty === 0 ? '' : physicalQty}
+                  type="text"
+                  inputMode="decimal"
+                  value={physicalQty === 0 ? '' : formatKgNumber(physicalQty)}
                   onChange={(e) => {
-                    const val = Math.max(0, parseInt(e.target.value) || 0);
+                    const val = parseBrazilianNumber(e.target.value);
                     setPhysicalQty(val);
                     if (val <= item.systemQty) {
                       setSurplusDecision('PENDING_DECISION');
                     }
                   }}
-                  placeholder="0"
+                  placeholder="0,00"
                   className="flex-1 py-3 px-4 text-2xl font-black text-slate-900 bg-white border-2 border-slate-300 rounded-xl focus:border-blue-600 focus:ring-4 focus:ring-blue-100 outline-none text-center"
                 />
               </div>
@@ -293,28 +298,28 @@ export const ConferenciaModal: React.FC<ConferenciaModalProps> = ({
                   onClick={() => setPhysicalQty(item.systemQty)}
                   className="py-2 px-1 text-xs font-bold rounded-lg bg-blue-100 text-blue-900 hover:bg-blue-200 border border-blue-300 cursor-pointer"
                 >
-                  Total ({item.systemQty})
+                  Total ({formatKgNumber(item.systemQty)})
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPhysicalQty((prev) => Math.max(0, prev - 50))}
+                  onClick={() => setPhysicalQty((prev) => Math.max(0, Math.round((prev - 50) * 100) / 100))}
                   className="py-2 px-1 text-xs font-bold rounded-lg bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 cursor-pointer"
                 >
-                  -50
+                  -50 kg
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPhysicalQty((prev) => Math.max(0, prev - 10))}
+                  onClick={() => setPhysicalQty((prev) => Math.max(0, Math.round((prev - 10) * 100) / 100))}
                   className="py-2 px-1 text-xs font-bold rounded-lg bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 cursor-pointer"
                 >
-                  -10
+                  -10 kg
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPhysicalQty((prev) => prev + 10)}
+                  onClick={() => setPhysicalQty((prev) => Math.round((prev + 10) * 100) / 100)}
                   className="py-2 px-1 text-xs font-bold rounded-lg bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 cursor-pointer"
                 >
-                  +10
+                  +10 kg
                 </button>
               </div>
             </div>
@@ -325,10 +330,10 @@ export const ConferenciaModal: React.FC<ConferenciaModalProps> = ({
             <div className="bg-rose-50 border-2 border-rose-300 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2 text-rose-900 font-extrabold text-xs uppercase tracking-wide">
                 <AlertTriangle className="w-4 h-4 text-rose-600" />
-                <span>Sobra detectada: físico ({physicalQty}) &gt; sistema ({item.systemQty})</span>
+                <span>Sobra detectada: físico ({formatKg(physicalQty)}) &gt; sistema ({formatKg(item.systemQty)})</span>
               </div>
               <p className="text-xs text-rose-800">
-                Selecione como deseja destinar o excedente de +{destinationResult.surplusQty} unidades:
+                Selecione como deseja destinar o excedente de +{formatKg(destinationResult.surplusQty)}:
               </p>
 
               <div className="space-y-2">
@@ -341,7 +346,7 @@ export const ConferenciaModal: React.FC<ConferenciaModalProps> = ({
                       : 'bg-white text-rose-950 border-rose-200 hover:bg-rose-100/50'
                   }`}
                 >
-                  ✓ Destinar todas as {physicalQty} un para o ARMAZÉM 01 (ajustar saldo)
+                  ✓ Destinar todas as {formatKg(physicalQty)} para o ARMAZÉM 01 (ajustar saldo)
                 </button>
 
                 <button
@@ -353,7 +358,7 @@ export const ConferenciaModal: React.FC<ConferenciaModalProps> = ({
                       : 'bg-white text-rose-950 border-rose-200 hover:bg-rose-100/50'
                   }`}
                 >
-                  ✓ Destinar {item.systemQty} un para ARMAZÉM 01 e isolar sobra (+{destinationResult.surplusQty})
+                  ✓ Destinar {formatKg(item.systemQty)} para ARMAZÉM 01 e isolar sobra (+{formatKg(destinationResult.surplusQty)})
                 </button>
               </div>
             </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Folder, StockItem } from '../types/stock';
-import { formatDateTime, formatQuantity } from '../utils/formatters';
+import { formatDateTime, formatQuantity, formatKg } from '../utils/formatters';
 import { formatTimeAgo } from '../utils/timeAgo';
 import { exportMaterialsToExcel } from '../utils/excelService';
 import {
@@ -230,7 +230,7 @@ export const FoldersTab: React.FC<FoldersTabProps> = ({
                   <div className="pt-2">
                     <div className="flex items-center justify-between text-xs text-slate-600 font-medium mb-1">
                       <span>
-                        {checkedCount} de {folderItems.length} itens ({formatQuantity(totalUnits)} un. totais)
+                        {checkedCount} de {folderItems.length} itens ({formatKg(totalUnits)} totais)
                       </span>
                       <span className="font-bold text-slate-800">{percent}%</span>
                     </div>
